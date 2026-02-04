@@ -1,0 +1,1603 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"
+    "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8" />
+<meta name="generator" content="AsciiDoc 8.6.7" />
+<title>compton(1)</title>
+<style type="text/css">
+/* Shared CSS for AsciiDoc xhtml11 and html5 backends */
+
+/* Default font. */
+body {
+  font-family: Georgia,serif;
+}
+
+/* Title font. */
+h1, h2, h3, h4, h5, h6,
+div.title, caption.title,
+thead, p.table.header,
+#toctitle,
+#author, #revnumber, #revdate, #revremark,
+#footer {
+  font-family: Arial,Helvetica,sans-serif;
+}
+
+body {
+  margin: 1em 5% 1em 5%;
+}
+
+a {
+  color: blue;
+  text-decoration: underline;
+}
+a:visited {
+  color: fuchsia;
+}
+
+em {
+  font-style: italic;
+  color: navy;
+}
+
+strong {
+  font-weight: bold;
+  color: #083194;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #527bbd;
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+
+h1, h2, h3 {
+  border-bottom: 2px solid silver;
+}
+h2 {
+  padding-top: 0.5em;
+}
+h3 {
+  float: left;
+}
+h3 + * {
+  clear: left;
+}
+h5 {
+  font-size: 1.0em;
+}
+
+div.sectionbody {
+  margin-left: 0;
+}
+
+hr {
+  border: 1px solid silver;
+}
+
+p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+ul, ol, li > p {
+  margin-top: 0;
+}
+ul > li     { color: #aaa; }
+ul > li > * { color: black; }
+
+pre {
+  padding: 0;
+  margin: 0;
+}
+
+#author {
+  color: #527bbd;
+  font-weight: bold;
+  font-size: 1.1em;
+}
+#email {
+}
+#revnumber, #revdate, #revremark {
+}
+
+#footer {
+  font-size: small;
+  border-top: 2px solid silver;
+  padding-top: 0.5em;
+  margin-top: 4.0em;
+}
+#footer-text {
+  float: left;
+  padding-bottom: 0.5em;
+}
+#footer-badges {
+  float: right;
+  padding-bottom: 0.5em;
+}
+
+#preamble {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+div.imageblock, div.exampleblock, div.verseblock,
+div.quoteblock, div.literalblock, div.listingblock, div.sidebarblock,
+div.admonitionblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+div.admonitionblock {
+  margin-top: 2.0em;
+  margin-bottom: 2.0em;
+  margin-right: 10%;
+  color: #606060;
+}
+
+div.content { /* Block element content. */
+  padding: 0;
+}
+
+/* Block element titles. */
+div.title, caption.title {
+  color: #527bbd;
+  font-weight: bold;
+  text-align: left;
+  margin-top: 1.0em;
+  margin-bottom: 0.5em;
+}
+div.title + * {
+  margin-top: 0;
+}
+
+td div.title:first-child {
+  margin-top: 0.0em;
+}
+div.content div.title:first-child {
+  margin-top: 0.0em;
+}
+div.content + div.title {
+  margin-top: 0.0em;
+}
+
+div.sidebarblock > div.content {
+  background: #ffffee;
+  border: 1px solid #dddddd;
+  border-left: 4px solid #f0f0f0;
+  padding: 0.5em;
+}
+
+div.listingblock > div.content {
+  border: 1px solid #dddddd;
+  border-left: 5px solid #f0f0f0;
+  background: #f8f8f8;
+  padding: 0.5em;
+}
+
+div.quoteblock, div.verseblock {
+  padding-left: 1.0em;
+  margin-left: 1.0em;
+  margin-right: 10%;
+  border-left: 5px solid #f0f0f0;
+  color: #888;
+}
+
+div.quoteblock > div.attribution {
+  padding-top: 0.5em;
+  text-align: right;
+}
+
+div.verseblock > pre.content {
+  font-family: inherit;
+  font-size: inherit;
+}
+div.verseblock > div.attribution {
+  padding-top: 0.75em;
+  text-align: left;
+}
+/* DEPRECATED: Pre version 8.2.7 verse style literal block. */
+div.verseblock + div.attribution {
+  text-align: left;
+}
+
+div.admonitionblock .icon {
+  vertical-align: top;
+  font-size: 1.1em;
+  font-weight: bold;
+  text-decoration: underline;
+  color: #527bbd;
+  padding-right: 0.5em;
+}
+div.admonitionblock td.content {
+  padding-left: 0.5em;
+  border-left: 3px solid #dddddd;
+}
+
+div.exampleblock > div.content {
+  border-left: 3px solid #dddddd;
+  padding-left: 0.5em;
+}
+
+div.imageblock div.content { padding-left: 0; }
+span.image img { border-style: none; }
+a.image:visited { color: white; }
+
+dl {
+  margin-top: 0.8em;
+  margin-bottom: 0.8em;
+}
+dt {
+  margin-top: 0.5em;
+  margin-bottom: 0;
+  font-style: normal;
+  color: navy;
+}
+dd > *:first-child {
+  margin-top: 0.1em;
+}
+
+ul, ol {
+    list-style-position: outside;
+}
+ol.arabic {
+  list-style-type: decimal;
+}
+ol.loweralpha {
+  list-style-type: lower-alpha;
+}
+ol.upperalpha {
+  list-style-type: upper-alpha;
+}
+ol.lowerroman {
+  list-style-type: lower-roman;
+}
+ol.upperroman {
+  list-style-type: upper-roman;
+}
+
+div.compact ul, div.compact ol,
+div.compact p, div.compact p,
+div.compact div, div.compact div {
+  margin-top: 0.1em;
+  margin-bottom: 0.1em;
+}
+
+tfoot {
+  font-weight: bold;
+}
+td > div.verse {
+  white-space: pre;
+}
+
+div.hdlist {
+  margin-top: 0.8em;
+  margin-bottom: 0.8em;
+}
+div.hdlist tr {
+  padding-bottom: 15px;
+}
+dt.hdlist1.strong, td.hdlist1.strong {
+  font-weight: bold;
+}
+td.hdlist1 {
+  vertical-align: top;
+  font-style: normal;
+  padding-right: 0.8em;
+  color: navy;
+}
+td.hdlist2 {
+  vertical-align: top;
+}
+div.hdlist.compact tr {
+  margin: 0;
+  padding-bottom: 0;
+}
+
+.comment {
+  background: yellow;
+}
+
+.footnote, .footnoteref {
+  font-size: 0.8em;
+}
+
+span.footnote, span.footnoteref {
+  vertical-align: super;
+}
+
+#footnotes {
+  margin: 20px 0 20px 0;
+  padding: 7px 0 0 0;
+}
+
+#footnotes div.footnote {
+  margin: 0 0 5px 0;
+}
+
+#footnotes hr {
+  border: none;
+  border-top: 1px solid silver;
+  height: 1px;
+  text-align: left;
+  margin-left: 0;
+  width: 20%;
+  min-width: 100px;
+}
+
+div.colist td {
+  padding-right: 0.5em;
+  padding-bottom: 0.3em;
+  vertical-align: top;
+}
+div.colist td img {
+  margin-top: 0.3em;
+}
+
+@media print {
+  #footer-badges { display: none; }
+}
+
+#toc {
+  margin-bottom: 2.5em;
+}
+
+#toctitle {
+  color: #527bbd;
+  font-size: 1.1em;
+  font-weight: bold;
+  margin-top: 1.0em;
+  margin-bottom: 0.1em;
+}
+
+div.toclevel0, div.toclevel1, div.toclevel2, div.toclevel3, div.toclevel4 {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+div.toclevel2 {
+  margin-left: 2em;
+  font-size: 0.9em;
+}
+div.toclevel3 {
+  margin-left: 4em;
+  font-size: 0.9em;
+}
+div.toclevel4 {
+  margin-left: 6em;
+  font-size: 0.9em;
+}
+
+span.aqua { color: aqua; }
+span.black { color: black; }
+span.blue { color: blue; }
+span.fuchsia { color: fuchsia; }
+span.gray { color: gray; }
+span.green { color: green; }
+span.lime { color: lime; }
+span.maroon { color: maroon; }
+span.navy { color: navy; }
+span.olive { color: olive; }
+span.purple { color: purple; }
+span.red { color: red; }
+span.silver { color: silver; }
+span.teal { color: teal; }
+span.white { color: white; }
+span.yellow { color: yellow; }
+
+span.aqua-background { background: aqua; }
+span.black-background { background: black; }
+span.blue-background { background: blue; }
+span.fuchsia-background { background: fuchsia; }
+span.gray-background { background: gray; }
+span.green-background { background: green; }
+span.lime-background { background: lime; }
+span.maroon-background { background: maroon; }
+span.navy-background { background: navy; }
+span.olive-background { background: olive; }
+span.purple-background { background: purple; }
+span.red-background { background: red; }
+span.silver-background { background: silver; }
+span.teal-background { background: teal; }
+span.white-background { background: white; }
+span.yellow-background { background: yellow; }
+
+span.big { font-size: 2em; }
+span.small { font-size: 0.6em; }
+
+span.underline { text-decoration: underline; }
+span.overline { text-decoration: overline; }
+span.line-through { text-decoration: line-through; }
+
+div.unbreakable { page-break-inside: avoid; }
+
+
+/*
+ * xhtml11 specific
+ *
+ * */
+
+tt {
+  font-family: "Courier New", Courier, monospace;
+  font-size: inherit;
+  color: navy;
+}
+
+div.tableblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+div.tableblock > table {
+  border: 3px solid #527bbd;
+}
+thead, p.table.header {
+  font-weight: bold;
+  color: #527bbd;
+}
+p.table {
+  margin-top: 0;
+}
+/* Because the table frame attribute is overriden by CSS in most browsers. */
+div.tableblock > table[frame="void"] {
+  border-style: none;
+}
+div.tableblock > table[frame="hsides"] {
+  border-left-style: none;
+  border-right-style: none;
+}
+div.tableblock > table[frame="vsides"] {
+  border-top-style: none;
+  border-bottom-style: none;
+}
+
+
+/*
+ * html5 specific
+ *
+ * */
+
+.monospaced {
+  font-family: "Courier New", Courier, monospace;
+  font-size: inherit;
+  color: navy;
+}
+
+table.tableblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+thead, p.tableblock.header {
+  font-weight: bold;
+  color: #527bbd;
+}
+p.tableblock {
+  margin-top: 0;
+}
+table.tableblock {
+  border-width: 3px;
+  border-spacing: 0px;
+  border-style: solid;
+  border-color: #527bbd;
+  border-collapse: collapse;
+}
+th.tableblock, td.tableblock {
+  border-width: 1px;
+  padding: 4px;
+  border-style: solid;
+  border-color: #527bbd;
+}
+
+table.tableblock.frame-topbot {
+  border-left-style: hidden;
+  border-right-style: hidden;
+}
+table.tableblock.frame-sides {
+  border-top-style: hidden;
+  border-bottom-style: hidden;
+}
+table.tableblock.frame-none {
+  border-style: hidden;
+}
+
+th.tableblock.halign-left, td.tableblock.halign-left {
+  text-align: left;
+}
+th.tableblock.halign-center, td.tableblock.halign-center {
+  text-align: center;
+}
+th.tableblock.halign-right, td.tableblock.halign-right {
+  text-align: right;
+}
+
+th.tableblock.valign-top, td.tableblock.valign-top {
+  vertical-align: top;
+}
+th.tableblock.valign-middle, td.tableblock.valign-middle {
+  vertical-align: middle;
+}
+th.tableblock.valign-bottom, td.tableblock.valign-bottom {
+  vertical-align: bottom;
+}
+
+
+/*
+ * manpage specific
+ *
+ * */
+
+body.manpage h1 {
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  border-top: 2px solid silver;
+  border-bottom: 2px solid silver;
+}
+body.manpage h2 {
+  border-style: none;
+}
+body.manpage div.sectionbody {
+  margin-left: 3em;
+}
+
+@media print {
+  body.manpage div#toc { display: none; }
+}
+</style>
+<script type="text/javascript">
+/*<![CDATA[*/
+var asciidoc = {  // Namespace.
+
+/////////////////////////////////////////////////////////////////////
+// Table Of Contents generator
+/////////////////////////////////////////////////////////////////////
+
+/* Author: Mihai Bazon, September 2002
+ * http://students.infoiasi.ro/~mishoo
+ *
+ * Table Of Content generator
+ * Version: 0.4
+ *
+ * Feel free to use this script under the terms of the GNU General Public
+ * License, as long as you do not remove or alter this notice.
+ */
+
+ /* modified by Troy D. Hanson, September 2006. License: GPL */
+ /* modified by Stuart Rackham, 2006, 2009. License: GPL */
+
+// toclevels = 1..4.
+toc: function (toclevels) {
+
+  function getText(el) {
+    var text = "";
+    for (var i = el.firstChild; i != null; i = i.nextSibling) {
+      if (i.nodeType == 3 /* Node.TEXT_NODE */) // IE doesn't speak constants.
+        text += i.data;
+      else if (i.firstChild != null)
+        text += getText(i);
+    }
+    return text;
+  }
+
+  function TocEntry(el, text, toclevel) {
+    this.element = el;
+    this.text = text;
+    this.toclevel = toclevel;
+  }
+
+  function tocEntries(el, toclevels) {
+    var result = new Array;
+    var re = new RegExp('[hH]([1-'+(toclevels+1)+'])');
+    // Function that scans the DOM tree for header elements (the DOM2
+    // nodeIterator API would be a better technique but not supported by all
+    // browsers).
+    var iterate = function (el) {
+      for (var i = el.firstChild; i != null; i = i.nextSibling) {
+        if (i.nodeType == 1 /* Node.ELEMENT_NODE */) {
+          var mo = re.exec(i.tagName);
+          if (mo && (i.getAttribute("class") || i.getAttribute("className")) != "float") {
+            result[result.length] = new TocEntry(i, getText(i), mo[1]-1);
+          }
+          iterate(i);
+        }
+      }
+    }
+    iterate(el);
+    return result;
+  }
+
+  var toc = document.getElementById("toc");
+  if (!toc) {
+    return;
+  }
+
+  // Delete existing TOC entries in case we're reloading the TOC.
+  var tocEntriesToRemove = [];
+  var i;
+  for (i = 0; i < toc.childNodes.length; i++) {
+    var entry = toc.childNodes[i];
+    if (entry.nodeName.toLowerCase() == 'div'
+     && entry.getAttribute("class")
+     && entry.getAttribute("class").match(/^toclevel/))
+      tocEntriesToRemove.push(entry);
+  }
+  for (i = 0; i < tocEntriesToRemove.length; i++) {
+    toc.removeChild(tocEntriesToRemove[i]);
+  }
+
+  // Rebuild TOC entries.
+  var entries = tocEntries(document.getElementById("content"), toclevels);
+  for (var i = 0; i < entries.length; ++i) {
+    var entry = entries[i];
+    if (entry.element.id == "")
+      entry.element.id = "_toc_" + i;
+    var a = document.createElement("a");
+    a.href = "#" + entry.element.id;
+    a.appendChild(document.createTextNode(entry.text));
+    var div = document.createElement("div");
+    div.appendChild(a);
+    div.className = "toclevel" + entry.toclevel;
+    toc.appendChild(div);
+  }
+  if (entries.length == 0)
+    toc.parentNode.removeChild(toc);
+},
+
+
+/////////////////////////////////////////////////////////////////////
+// Footnotes generator
+/////////////////////////////////////////////////////////////////////
+
+/* Based on footnote generation code from:
+ * http://www.brandspankingnew.net/archive/2005/07/format_footnote.html
+ */
+
+footnotes: function () {
+  // Delete existing footnote entries in case we're reloading the footnodes.
+  var i;
+  var noteholder = document.getElementById("footnotes");
+  if (!noteholder) {
+    return;
+  }
+  var entriesToRemove = [];
+  for (i = 0; i < noteholder.childNodes.length; i++) {
+    var entry = noteholder.childNodes[i];
+    if (entry.nodeName.toLowerCase() == 'div' && entry.getAttribute("class") == "footnote")
+      entriesToRemove.push(entry);
+  }
+  for (i = 0; i < entriesToRemove.length; i++) {
+    noteholder.removeChild(entriesToRemove[i]);
+  }
+
+  // Rebuild footnote entries.
+  var cont = document.getElementById("content");
+  var spans = cont.getElementsByTagName("span");
+  var refs = {};
+  var n = 0;
+  for (i=0; i<spans.length; i++) {
+    if (spans[i].className == "footnote") {
+      n++;
+      var note = spans[i].getAttribute("data-note");
+      if (!note) {
+        // Use [\s\S] in place of . so multi-line matches work.
+        // Because JavaScript has no s (dotall) regex flag.
+        note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+        spans[i].innerHTML =
+          "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+        spans[i].setAttribute("data-note", note);
+      }
+      noteholder.innerHTML +=
+        "<div class='footnote' id='_footnote_" + n + "'>" +
+        "<a href='#_footnoteref_" + n + "' title='Return to text'>" +
+        n + "</a>. " + note + "</div>";
+      var id =spans[i].getAttribute("id");
+      if (id != null) refs["#"+id] = n;
+    }
+  }
+  if (n == 0)
+    noteholder.parentNode.removeChild(noteholder);
+  else {
+    // Process footnoterefs.
+    for (i=0; i<spans.length; i++) {
+      if (spans[i].className == "footnoteref") {
+        var href = spans[i].getElementsByTagName("a")[0].getAttribute("href");
+        href = href.match(/#.*/)[0];  // Because IE return full URL.
+        n = refs[href];
+        spans[i].innerHTML =
+          "[<a href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+      }
+    }
+  }
+},
+
+install: function(toclevels) {
+  var timerId;
+
+  function reinstall() {
+    asciidoc.footnotes();
+    if (toclevels) {
+      asciidoc.toc(toclevels);
+    }
+  }
+
+  function reinstallAndRemoveTimer() {
+    clearInterval(timerId);
+    reinstall();
+  }
+
+  timerId = setInterval(reinstall, 500);
+  if (document.addEventListener)
+    document.addEventListener("DOMContentLoaded", reinstallAndRemoveTimer, false);
+  else
+    window.onload = reinstallAndRemoveTimer;
+}
+
+}
+asciidoc.install();
+/*]]>*/
+</script>
+</head>
+<body class="manpage">
+<div id="header">
+<h1>
+compton(1) Manual Page
+</h1>
+<h2>NAME</h2>
+<div class="sectionbody">
+<p>compton -
+   a compositor for X11
+</p>
+</div>
+</div>
+<div id="content">
+<div class="sect1">
+<h2 id="_synopsis">SYNOPSIS</h2>
+<div class="sectionbody">
+<div class="paragraph"><p><strong>compton</strong> [<em>OPTIONS</em>]</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_warning">WARNING</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>This man page may be less up-to-date than the usage text in compton (<tt>compton -h</tt>).</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_description">DESCRIPTION</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>compton is a compositor based on Dana Jansens' version of xcompmgr (which itself was written by Keith Packard). It includes some improvements over the original xcompmgr, like window frame opacity and inactive window transparency.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_options">OPTIONS</h2>
+<div class="sectionbody">
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>-h</strong>, <strong>--help</strong>
+</dt>
+<dd>
+<p>
+        Get the usage text embedded in program code, which may be more up-to-date than this man page.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-d</strong> <em>DISPLAY</em>
+</dt>
+<dd>
+<p>
+        Display to be managed.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-r</strong> <em>RADIUS</em>
+</dt>
+<dd>
+<p>
+        The blur radius for shadows, in pixels. (defaults to 12)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-o</strong> <em>OPACITY</em>
+</dt>
+<dd>
+<p>
+        The opacity of shadows. (0.0 - 1.0, defaults to 0.75)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-l</strong> <em>OFFSET</em>
+</dt>
+<dd>
+<p>
+        The left offset for shadows, in pixels. (defaults to -15)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-t</strong> <em>OFFSET</em>
+</dt>
+<dd>
+<p>
+        The top offset for shadows, in pixels. (defaults to -15)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-I</strong> <em>OPACITY_STEP</em>
+</dt>
+<dd>
+<p>
+        Opacity change between steps while fading in. (0.01 - 1.0, defaults to 0.028)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-O</strong> <em>OPACITY_STEP</em>
+</dt>
+<dd>
+<p>
+        Opacity change between steps while fading out. (0.01 - 1.0, defaults to 0.03)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-D</strong> <em>MILLISECONDS</em>
+</dt>
+<dd>
+<p>
+        The time between steps in fade step, in milliseconds. (&gt; 0, defaults to 10)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-m</strong> <em>OPACITY</em>
+</dt>
+<dd>
+<p>
+        Default opacity for dropdown menus and popup menus. (0.0 - 1.0, defaults to 1.0)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-c</strong>
+</dt>
+<dd>
+<p>
+        Enabled client-side shadows on windows. Note desktop windows (windows with <em>_NET_WM_WINDOW_TYPE_DESKTOP</em>) never get shadow.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-C</strong>
+</dt>
+<dd>
+<p>
+        Avoid drawing shadows on dock/panel windows.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-z</strong>
+</dt>
+<dd>
+<p>
+        Zero the part of the shadow&#8217;s mask behind the window. Note this may not work properly on ARGB windows with fully transparent areas.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-f</strong>
+</dt>
+<dd>
+<p>
+        Fade windows in/out when opening/closing and when opacity changes, unless <strong>--no-fading-openclose</strong> is used.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-F</strong>
+</dt>
+<dd>
+<p>
+        Equals <strong>-f</strong>. Deprecated.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-i</strong> <em>OPACITY</em>
+</dt>
+<dd>
+<p>
+        Opacity of inactive windows. (0.1 - 1.0, disabled by default)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-e</strong> <em>OPACITY</em>
+</dt>
+<dd>
+<p>
+        Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-G</strong>
+</dt>
+<dd>
+<p>
+        Don&#8217;t draw shadows on drag-and-drop windows.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-b</strong>
+</dt>
+<dd>
+<p>
+        Daemonize process. Fork to background after initialization.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>-S</strong>
+</dt>
+<dd>
+<p>
+        Enable synchronous X operation (for debugging).
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--config</strong> <em>PATH</em>
+</dt>
+<dd>
+<p>
+        Look for configuration file at the path. See <strong>CONFIGURATION FILES</strong> section below for where compton looks for a configuration file by default.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--write-pid-path</strong> <em>PATH</em>
+</dt>
+<dd>
+<p>
+        Write process ID to a file.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--shadow-red</strong> <em>VALUE</em>
+</dt>
+<dd>
+<p>
+        Red color value of shadow (0.0 - 1.0, defaults to 0).
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--shadow-green</strong> <em>VALUE</em>
+</dt>
+<dd>
+<p>
+        Green color value of shadow (0.0 - 1.0, defaults to 0).
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--shadow-blue</strong> <em>VALUE</em>
+</dt>
+<dd>
+<p>
+        Blue color value of shadow (0.0 - 1.0, defaults to 0).
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--inactive-opacity-override</strong>
+</dt>
+<dd>
+<p>
+        Let inactive opacity set by <strong>-i</strong> overrides the windows' <em>_NET_WM_OPACITY</em> values.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--active-opacity</strong> <em>OPACITY</em>
+</dt>
+<dd>
+<p>
+  Default opacity for active windows. (0.0 - 1.0)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--inactive-dim</strong> <em>VALUE</em>
+</dt>
+<dd>
+<p>
+        Dim inactive windows. (0.0 - 1.0, defaults to 0.0)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--mark-wmwin-focused</strong>
+</dt>
+<dd>
+<p>
+        Try to detect WM windows (a non-override-redirect window with no child that has <tt>WM_STATE</tt>) and mark them as active.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--mark-ovredir-focused</strong>
+</dt>
+<dd>
+<p>
+        Mark override-redirect windows that doesn&#8217;t have a child window with <tt>WM_STATE</tt> focused.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--no-fading-openclose</strong>
+</dt>
+<dd>
+<p>
+        Do not fade on window open/close.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--shadow-ignore-shaped</strong>
+</dt>
+<dd>
+<p>
+        Do not paint shadows on shaped windows. Note shaped windows here means windows setting its shape through X Shape extension. Those using ARGB background is beyond our control.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--detect-rounded-corners</strong>
+</dt>
+<dd>
+<p>
+        Try to detect windows with rounded corners and don&#8217;t consider them shaped windows. The accuracy is not very high, unfortunately.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--detect-client-opacity</strong>
+</dt>
+<dd>
+<p>
+        Detect <em>_NET_WM_OPACITY</em> on client windows, useful for window managers not passing <em>_NET_WM_OPACITY</em> of client windows to frame windows.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--refresh-rate</strong> <em>REFRESH_RATE</em>
+</dt>
+<dd>
+<p>
+        Specify refresh rate of the screen. If not specified or 0, compton will try detecting this with X RandR extension.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--vsync</strong> <em>VSYNC_METHOD</em>
+</dt>
+<dd>
+<p>
+        Set VSync method. VSync methods currently available:
+</p>
+<div class="openblock">
+<div class="content">
+<div class="ulist"><ul>
+<li>
+<p>
+<em>none</em>: No VSync
+</p>
+</li>
+<li>
+<p>
+<em>drm</em>: VSync with <em>DRM_IOCTL_WAIT_VBLANK</em>. May only work on some drivers.
+</p>
+</li>
+<li>
+<p>
+<em>opengl</em>: Try to VSync with <em>SGI_video_sync</em> OpenGL extension. Only work on some drivers.
+</p>
+</li>
+<li>
+<p>
+<em>opengl-oml</em>: Try to VSync with <em>OML_sync_control</em> OpenGL extension. Only work on some drivers.
+</p>
+</li>
+<li>
+<p>
+<em>opengl-swc</em>: Try to VSync with <em>SGI_swap_control</em> OpenGL extension. Only work on some drivers. Works only with GLX backend. Known to be most effective on many drivers. Does not actually control paint timing, only buffer swap is affected, so it doesn&#8217;t have the effect of <strong>--sw-opti</strong> unlike other methods. Experimental.
+</p>
+</li>
+<li>
+<p>
+<em>opengl-mswc</em>: Try to VSync with <em>MESA_swap_control</em> OpenGL extension. Basically the same as <em>opengl-swc</em> above, except the extension we use.
+</p>
+</li>
+</ul></div>
+<div class="paragraph"><p>(Note some VSync methods may not be enabled at compile time.)</p></div>
+</div></div>
+</dd>
+<dt class="hdlist1">
+<strong>--vsync-aggressive</strong>
+</dt>
+<dd>
+<p>
+        Attempt to send painting request before VBlank and do XFlush() during VBlank. Reported to work pretty terribly. This switch may be lifted out at any moment.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--alpha-step</strong> <em>VALUE</em>
+</dt>
+<dd>
+<p>
+        X Render backend: Step for pregenerating alpha pictures. (0.01 - 1.0, defaults to 0.03)
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--dbe</strong>
+</dt>
+<dd>
+<p>
+        Enable DBE painting mode, intended to use with VSync to (hopefully) eliminate tearing. Reported to have no effect, though.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--paint-on-overlay</strong>
+</dt>
+<dd>
+<p>
+        Painting on X Composite overlay window instead of on root window.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--sw-opti</strong>
+</dt>
+<dd>
+<p>
+        Limit compton to repaint at most once every 1 / <em>refresh_rate</em> second to boost performance. This should not be used with <strong>--vsync</strong> drm/opengl/opengl-oml as they essentially does <strong>--sw-opti</strong>'s job already, unless you wish to specify a lower refresh rate than the actual value.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--use-ewmh-active-win</strong>
+</dt>
+<dd>
+<p>
+        Use EWMH <em>_NET_ACTIVE_WINDOW</em> to determine currently focused window, rather than listening to <em>FocusIn</em>/<em>FocusOut</em> event. Might have more accuracy, provided that the WM supports it.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--respect-prop-shadow</strong>
+</dt>
+<dd>
+<p>
+        Respect <em>_COMPTON_SHADOW</em>. This a prototype-level feature, which you must not rely on.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--unredir-if-possible</strong>
+</dt>
+<dd>
+<p>
+        Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows. <strong>--paint-on-overlay</strong> may make the flickering less obvious.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--unredir-if-possible-delay</strong> <em>MILLISECONDS</em>
+</dt>
+<dd>
+<p>
+        Delay before unredirecting the window, in milliseconds. Defaults to 0.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--unredir-if-possible-exclude</strong> <em>CONDITION</em>
+</dt>
+<dd>
+<p>
+        Conditions of windows that shouldn&#8217;t be considered full-screen for unredirecting screen.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--shadow-exclude</strong> <em>CONDITION</em>
+</dt>
+<dd>
+<p>
+        Specify a list of conditions of windows that should have no shadow.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--fade-exclude</strong> <em>CONDITION</em>
+</dt>
+<dd>
+<p>
+        Specify a list of conditions of windows that should not be faded.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--focus-exclude</strong> <em>CONDITION</em>
+</dt>
+<dd>
+<p>
+        Specify a list of conditions of windows that should always be considered focused.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--inactive-dim-fixed</strong>
+</dt>
+<dd>
+<p>
+        Use fixed inactive dim value, instead of adjusting according to window opacity.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--detect-transient</strong>
+</dt>
+<dd>
+<p>
+        Use <em>WM_TRANSIENT_FOR</em> to group windows, and consider windows in the same group focused at the same time.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--detect-client-leader</strong>
+</dt>
+<dd>
+<p>
+        Use <em>WM_CLIENT_LEADER</em> to group windows, and consider windows in the same group focused at the same time. <em>WM_TRANSIENT_FOR</em> has higher priority if <strong>--detect-transient</strong> is enabled, too.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--blur-background</strong>
+</dt>
+<dd>
+<p>
+        Blur background of semi-transparent / ARGB windows. Bad in performance, with driver-dependent behavior. The name of the switch may change without prior notifications.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--blur-background-frame</strong>
+</dt>
+<dd>
+<p>
+        Blur background of windows when the window frame is not opaque.  Implies <strong>--blur-background</strong>. Bad in performance, with driver-dependent behavior. The name may change.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--blur-background-fixed</strong>
+</dt>
+<dd>
+<p>
+        Use fixed blur strength rather than adjusting according to window opacity.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--blur-kern</strong> <em>MATRIX</em>
+</dt>
+<dd>
+<p>
+        Specify the blur convolution kernel, with the following format:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><tt>WIDTH,HEIGHT,ELE1,ELE2,ELE3,ELE4,ELE5...</tt></pre>
+</div></div>
+<div class="paragraph"><p>The element in the center must not be included, it will be forever 1.0 or changing based on opacity, depending on whether you have <tt>--blur-background-fixed</tt>. Yet the automatic adjustment of blur factor may not work well with a custom blur kernel.</p></div>
+<div class="paragraph"><p>A 7x7 Guassian blur kernel (sigma = 0.84089642) looks like:</p></div>
+<div class="listingblock">
+<div class="content">
+<pre><tt>--blur-kern '7,7,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003'</tt></pre>
+</div></div>
+<div class="paragraph"><p>May also be one of the predefined kernels: <tt>3x3box</tt> (default), <tt>5x5box</tt>, <tt>7x7box</tt>, <tt>3x3gaussian</tt>, <tt>5x5gaussian</tt>, <tt>7x7gaussian</tt>, <tt>9x9gaussian</tt>, <tt>11x11gaussian</tt>. All Guassian kernels are generated with sigma = 0.84089642 . You may use the accompanied <tt>compton-convgen.py</tt> to generate blur kernels.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>--blur-background-exclude</strong> <em>CONDITION</em>
+</dt>
+<dd>
+<p>
+        Exclude conditions for background blur.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--resize-damage</strong> <em>INTEGER</em>
+</dt>
+<dd>
+<p>
+        Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with <strong>--dbe</strong> or <strong>--glx-swap-method</strong>, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use <strong>--resize-damage</strong> 1, with a 5x5 one you use <strong>--resize-damage</strong> 2, and so on). May or may not work with <tt>--glx-no-stencil</tt>. Shrinking doesn&#8217;t function correctly.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--invert-color-include</strong> <em>CONDITION</em>
+</dt>
+<dd>
+<p>
+        Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--opacity-rule</strong> <em>OPACITY</em>:'CONDITION'
+</dt>
+<dd>
+<p>
+        Specify a list of opacity rules, in the format <tt>PERCENT:PATTERN</tt>, like <tt>50:name *= "Firefox"</tt>. compton-trans is recommended over this. Note we do not distinguish 100% and unset, and we don&#8217;t make any guarantee about possible conflicts with other programs that set <em>_NET_WM_WINDOW_OPACITY</em> on frame or client windows.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--shadow-exclude-reg</strong> <em>GEOMETRY</em>
+</dt>
+<dd>
+<p>
+        Specify a X geometry that describes the region in which shadow should not be painted in, such as a dock window region.  Use <tt>--shadow-exclude-reg x10+0-0</tt>, for example, if the 10 pixels on the bottom of the screen should not have shadows painted on.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--xinerama-shadow-crop</strong>
+</dt>
+<dd>
+<p>
+        Crop shadow of a window fully on a particular Xinerama screen to the screen.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--backend</strong> <em>BACKEND</em>
+</dt>
+<dd>
+<p>
+        Specify the backend to use: <tt>xrender</tt> or <tt>glx</tt>. GLX (OpenGL) backend generally has much superior performance as far as you have a graphic card/chip and driver.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--glx-no-stencil</strong>
+</dt>
+<dd>
+<p>
+  GLX backend: Avoid using stencil buffer, useful if you don&#8217;t have a stencil buffer. Might cause incorrect opacity when rendering transparent content (but never practically happened) and may not work with <strong>--blur-background</strong>. My tests show a 15% performance boost. Recommended.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--glx-copy-from-front</strong>
+</dt>
+<dd>
+<p>
+        GLX backend: Copy unmodified regions from front buffer instead of redrawing them all. My tests with nvidia-drivers show a 10% decrease in performance when the whole screen is modified, but a 20% increase when only 1/4 is. My tests on nouveau show terrible slowdown. Useful with <tt>--glx-swap-method</tt>, as well.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--glx-use-copysubbuffermesa</strong>
+</dt>
+<dd>
+<p>
+        GLX backend: Use <em>MESA_copy_sub_buffer</em> to do partial screen update. My tests on nouveau shows a 200% performance boost when only 1/4 of the screen is updated. May break VSync and is not available on some drivers. Overrides <strong>--glx-copy-from-front</strong>.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--glx-no-rebind-pixmap</strong>
+</dt>
+<dd>
+<p>
+        GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe). Recommended if it works.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--glx-swap-method</strong> undefined/exchange/copy/3/4/5/6/buffer-age
+</dt>
+<dd>
+<p>
+        GLX backend: GLX buffer swap method we assume. Could be <tt>undefined</tt> (0), <tt>copy</tt> (1), <tt>exchange</tt> (2), 3-6, or <tt>buffer-age</tt> (-1).  <tt>undefined</tt> is the slowest and the safest, and the default value. <tt>copy</tt> is fastest, but may fail on some drivers, 2-6 are gradually slower but safer (6 is still faster than 0). Usually, double buffer means 2, triple buffer means 3. <tt>buffer-age</tt> means auto-detect using <em>GLX_EXT_buffer_age</em>, supported by some drivers. Useless with <strong>--glx-use-copysubbuffermesa</strong>. Partially breaks <tt>--resize-damage</tt>. Defaults to <tt>undefined</tt>.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--glx-use-gpushader4</strong>
+</dt>
+<dd>
+<p>
+        GLX backend: Use <em>GL_EXT_gpu_shader4</em> for some optimization on blur GLSL code. My tests on GTX 670 show no noticeable effect.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--dbus</strong>
+</dt>
+<dd>
+<p>
+        Enable remote control via D-Bus. See the <strong>D-BUS API</strong> section below for more details.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--benchmark</strong> <em>CYCLES</em>
+</dt>
+<dd>
+<p>
+        Benchmark mode. Repeatedly paint until reaching the specified cycles.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>--benchmark-wid</strong> <em>WINDOW_ID</em>
+</dt>
+<dd>
+<p>
+        Specify window ID to repaint in benchmark mode. If omitted or is 0, the whole screen is repainted.
+</p>
+</dd>
+</dl></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_format_of_conditions">FORMAT OF CONDITIONS</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>Some options accept a condition string to match certain windows. A condition string is formed by one or more conditions, joined by logical operators.</p></div>
+<div class="paragraph"><p>A condition with "exists" operator looks like this:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><tt>&lt;NEGATION&gt; &lt;TARGET&gt; &lt;CLIENT/FRAME&gt; [&lt;INDEX&gt;] : &lt;FORMAT&gt; &lt;TYPE&gt;</tt></pre>
+</div></div>
+<div class="paragraph"><p>With equals operator it looks like:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><tt>&lt;NEGATION&gt; &lt;TARGET&gt; &lt;CLIENT/FRAME&gt; [&lt;INDEX&gt;] : &lt;FORMAT&gt; &lt;TYPE&gt; &lt;NEGATION&gt; &lt;OP QUALIFIER&gt; &lt;MATCH TYPE&gt; = &lt;PATTERN&gt;</tt></pre>
+</div></div>
+<div class="paragraph"><p>With greater-than/less-than operators it looks like:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><tt>&lt;NEGATION&gt; &lt;TARGET&gt; &lt;CLIENT/FRAME&gt; [&lt;INDEX&gt;] : &lt;FORMAT&gt; &lt;TYPE&gt; &lt;NEGATION&gt; &lt;OPERATOR&gt; &lt;PATTERN&gt;</tt></pre>
+</div></div>
+<div class="paragraph"><p><em>NEGATION</em> (optional) is one or more exclamation marks;</p></div>
+<div class="paragraph"><p><em>TARGET</em> is either a predefined target name, or the name of a window property to match. Supported predefined targets are <tt>id</tt>, <tt>x</tt>, <tt>y</tt>, <tt>x2</tt> (x + widthb), <tt>y2</tt>, <tt>width</tt>, <tt>height</tt>, <tt>widthb</tt> (width + 2 * border), <tt>heightb</tt>, <tt>override_redirect</tt>, <tt>argb</tt> (whether the window has an ARGB visual), <tt>focused</tt>, <tt>wmwin</tt> (whether the window looks like a WM window, i.e. has no child window with <tt>WM_STATE</tt> and is not override-redirected), <tt>client</tt> (ID of client window), <tt>window_type</tt> (window type in string), <tt>leader</tt> (ID of window leader), <tt>name</tt>, <tt>class_g</tt> (= <tt>WM_CLASS[1]</tt>), <tt>class_i</tt> (= <tt>WM_CLASS[0]</tt>), and <tt>role</tt>.</p></div>
+<div class="paragraph"><p><em>CLIENT/FRAME</em> is a single <tt>@</tt> if the window attribute should be be looked up on client window, nothing if on frame window;</p></div>
+<div class="paragraph"><p><em>INDEX</em> (optional) is the index number of the property to look up. For example, <tt>[2]</tt> means look at the third value in the property. Do not specify it for predefined targets.</p></div>
+<div class="paragraph"><p><em>FORMAT</em> (optional) specifies the format of the property, 8, 16, or 32. On absence we use format X reports. Do not specify it for predefined or string targets.</p></div>
+<div class="paragraph"><p><em>TYPE</em> is a single character representing the type of the property to match for: <tt>c</tt> for <em>CARDINAL</em>, <tt>a</tt> for <em>ATOM</em>, <tt>w</tt> for <em>WINDOW</em>, <tt>d</tt> for <em>DRAWABLE</em>, <tt>s</tt> for <em>STRING</em> (and any other string types, such as <em>UTF8_STRING</em>). Do not specify it for predefined targets.</p></div>
+<div class="paragraph"><p><em>OP QUALIFIER</em> (optional), applicable only for equals operator, could be <tt>?</tt> (ignore-case).</p></div>
+<div class="paragraph"><p><em>MATCH TYPE</em> (optional), applicable only for equals operator, could be nothing (exact match), <tt>*</tt> (match anywhere), <tt>^</tt> (match from start), <tt>%</tt> (wildcard), or <tt>~</tt> (PCRE2 regular expression).</p></div>
+<div class="paragraph"><p><em>OPERATOR</em> is one of <tt>=</tt> (equals), <tt>&lt;</tt>, <tt>&gt;</tt>, <tt>&lt;=</tt>, <tt>=&gt;</tt>, or nothing (exists). Exists operator checks whether a property exists on a window (but for predefined targets, exists means != 0 then).</p></div>
+<div class="paragraph"><p><em>PATTERN</em> is either an integer or a string enclosed by single or double quotes. Python-3-style escape sequences and raw string are supported in the string format.</p></div>
+<div class="paragraph"><p>Supported logical operators are <tt>&amp;&amp;</tt> (and) and <tt>||</tt> (or). <tt>&amp;&amp;</tt> has higher precedence than <tt>||</tt>, left-to-right associativity. Use parentheses to change precedence.</p></div>
+<div class="paragraph"><p>Examples:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><tt># If the window is focused
+focused
+focused = 1
+# If the window is not override-redirected
+!override_redirect
+override_redirect = false
+override_redirect != true
+override_redirect != 1
+# If the window is a menu
+window_type *= "menu"
+_NET_WM_WINDOW_TYPE@:a *= "MENU"
+# If the window name contains "Firefox", ignore case
+name *?= "Firefox"
+_NET_WM_NAME@:s *?= "Firefox"
+# If the window name ends with "Firefox"
+name %= "*Firefox"
+name ~= "Firefox$"
+# If the window has a property _COMPTON_SHADOW with value 0, type CARDINAL,
+# format 32, value 0, on its frame window
+_COMPTON_SHADOW:32c = 0
+# If the third value of _NET_FRAME_EXTENTS is less than 20, or there's no
+# _NET_FRAME_EXTENTS property on client window
+_NET_FRAME_EXTENTS@[2]:32c &lt; 20 || !_NET_FRAME_EXTENTS@:32c
+# The pattern here will be parsed as "dd4"
+name = "\x64\x64\o64"
+# The pattern here will be parsed as "\x64\x64\x64"
+name = r"\x64\x64\o64"</tt></pre>
+</div></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_legacy_format_of_conditions">LEGACY FORMAT OF CONDITIONS</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>This is the old condition format we once used. Support of this format might be removed in the future.</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><tt>condition = TARGET:TYPE[FLAGS]:PATTERN</tt></pre>
+</div></div>
+<div class="paragraph"><p><em>TARGET</em> is one of "n" (window name), "i" (window class instance), "g" (window general class), and "r" (window role).</p></div>
+<div class="paragraph"><p><em>TYPE</em> is one of "e" (exact match), "a" (match anywhere), "s" (match from start), "w" (wildcard), and "p" (PCRE2 regular expressions, if compiled with the support).</p></div>
+<div class="paragraph"><p><em>FLAGS</em> could be a series of flags. Currently the only defined flag is "i" (ignore case).</p></div>
+<div class="paragraph"><p><em>PATTERN</em> is the actual pattern string.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_configuration_files">CONFIGURATION FILES</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>compton could read from a configuration file if libconfig support is compiled in. If <strong>--config</strong> is not used, compton will seek for a configuration file in <tt>$XDG_CONFIG_HOME/compton.conf</tt> (<tt>~/.config/compton.conf</tt>, usually), then <tt>~/.compton.conf</tt>, then <tt>compton.conf</tt> under <tt>$XDG_DATA_DIRS</tt> (often <tt>/etc/xdg/compton.conf</tt>).</p></div>
+<div class="paragraph"><p>compton uses general libconfig configuration file format. A sample configuration file is available as <tt>compton.sample.conf</tt> in the source tree. Most commandline switches each could be replaced with an option in configuration file, thus documented above. Window-type-specific settings are exposed only in configuration file and has the following format:</p></div>
+<div class="listingblock">
+<div class="content">
+<pre><tt>wintypes:
+{
+  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; };
+};</tt></pre>
+</div></div>
+<div class="paragraph"><p><em>WINDOW_TYPE</em> is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notify", "combo", and "dnd". "fade" and "shadow" controls window-type-specific shadow and fade settings. "opacity" controls default opacity of the window type. "focus" controls whether the window of this type is to be always considered focused. (By default, all window types except "normal" and "dialog" has this on.)</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_signals">SIGNALS</h2>
+<div class="sectionbody">
+<div class="ulist"><ul>
+<li>
+<p>
+compton reinitializes itself upon receiving <tt>SIGUSR1</tt>.
+</p>
+</li>
+</ul></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_d_bus_api">D-BUS API</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>It&#8217;s possible to control compton via D-Bus messages, by running compton with <strong>--dbus</strong> and send messages to <tt>com.github.chjj.compton.&lt;DISPLAY&gt;</tt>. <tt>&lt;DISPLAY&gt;</tt> is the display used by compton, with all non-alphanumeric characters transformed to underscores. For <tt>DISPLAY=:0.0</tt> you should use <tt>com.github.chjj.compton._0_0</tt>, for example.</p></div>
+<div class="paragraph"><p>The D-Bus methods and signals are not yet stable, thus undocumented right now.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_examples">EXAMPLES</h2>
+<div class="sectionbody">
+<div class="ulist"><ul>
+<li>
+<p>
+Disable configuration file parsing:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><tt>$ compton --config /dev/null</tt></pre>
+</div></div>
+</li>
+<li>
+<p>
+Run compton with client-side shadow and fading, disable shadow on dock windows and drag-and-drop windows:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><tt>$ compton -cCGf</tt></pre>
+</div></div>
+</li>
+<li>
+<p>
+Same thing as above, plus making inactive windows 80% transparent, making frame 80% transparent, don&#8217;t fade on window open/close, enable software optimization, and fork to background:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><tt>$ compton -bcCGf -i 0.8 -e 0.8 --no-fading-openclose --sw-opti</tt></pre>
+</div></div>
+</li>
+<li>
+<p>
+Draw white shadows:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><tt>$ compton -c --shadow-red 1 --shadow-green 1 --shadow-blue 1</tt></pre>
+</div></div>
+</li>
+<li>
+<p>
+Avoid drawing shadows on wbar window:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><tt>$ compton -c --shadow-exclude 'class_g = "wbar"'</tt></pre>
+</div></div>
+</li>
+<li>
+<p>
+Enable OpenGL SGI_swap_control VSync with GLX backend:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><tt>$ compton --backend glx --vsync opengl-swc</tt></pre>
+</div></div>
+</li>
+</ul></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_bugs">BUGS</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>Please report any you find to <a href="https://github.com/chjj/compton">https://github.com/chjj/compton</a> .</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_authors">AUTHORS</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>xcompmgr, originally written by Keith Packard, with contributions from Matthew Allum, Eric Anholt, Dan Doel, Thomas Luebking, Matthew Hawn, Ely Levy, Phil Blundell, and Carl Worth. Compton by Christopher Jeffrey, based on Dana Jansens' original work, with contributions from Richard Grenville.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_resources">RESOURCES</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>Homepage: <a href="https://github.com/chjj/compton">https://github.com/chjj/compton</a></p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_see_also">SEE ALSO</h2>
+<div class="sectionbody">
+<div class="paragraph"><p><strong>xcompmgr</strong>(1), <a href="compton-trans.html"><strong>compton-trans</strong>(1)</a></p></div>
+</div>
+</div>
+</div>
+<div id="footnotes"><hr /></div>
+<div id="footer">
+<div id="footer-text">
+Last updated 2014-03-30 20:46:04 CDT
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,201 @@
+'\" t
+.\"     Title: compton-trans
+.\"    Author: [see the "AUTHORS" section]
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 03/31/2014
+.\"    Manual: LOCAL USER COMMANDS
+.\"    Source: compton nightly-20121114
+.\"  Language: English
+.\"
+.TH "COMPTON\-TRANS" "1" "03/31/2014" "compton nightly\-20121114" "LOCAL USER COMMANDS"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+compton-trans \- an opacity setter tool
+.SH "SYNOPSIS"
+.sp
+\fBcompton\-trans\fR [\-w \fIWINDOW_ID\fR] [\-n \fIWINDOW_NAME\fR] [\-c] [\-s] \fIOPACITY\fR
+.SH "DESCRIPTION"
+.sp
+\fBcompton\-trans\fR is a bash script that sets \fI_NET_WM_WINDOW_OPACITY\fR attribute of a window using standard X11 command\-line utilities, including \fBxprop\fR(1) and \fBxwininfo\fR(1)\&. It is similar to \fBtransset\fR(1) or \fBtransset\-df\fR(1)\&.
+.SH "OPTIONS"
+.PP
+\fB\-w\fR \fIWINDOW_ID\fR
+.RS 4
+Specify the window id of the target window\&.
+.RE
+.PP
+\fB\-n\fR \fIWINDOW_NAME\fR
+.RS 4
+Specify and try to match a window name\&.
+.RE
+.PP
+\fB\-c\fR
+.RS 4
+Specify the currently active window as target\&. Only works if EWMH
+\fI_NET_ACTIVE_WINDOW\fR
+property exists on root window\&.
+.RE
+.PP
+\fB\-s\fR
+.RS 4
+Select target window with mouse cursor\&. This is the default if no window has been specified\&.
+.RE
+.PP
+\fB\-o\fR \fIOPACITY\fR
+.RS 4
+Specify the new opacity value for the window\&. This value can be anywhere from 1\-100\&. If it is prefixed with a plus or minus (+/\-), this will increment or decrement from the target window\(cqs current opacity instead\&.
+.RE
+.SH "EXAMPLES"
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Set the opacity of the window with specific window ID to 75%:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+compton\-trans \-w "$WINDOWID" 75
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Set the opacity of the window with the name "urxvt" to 75%:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+compton\-trans \-n "urxvt" 75
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Set current window to opacity of 75%:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+compton\-trans \-c 75
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Select target window and set opacity to 75%:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+compton\-trans \-s 75
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Increment opacity of current active window by 5%:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+compton\-trans \-c +5
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Decrement opacity of current active window by 5%:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+compton\-trans \-c \-\- \-5
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.SH "BUGS"
+.sp
+Please report any bugs you find to https://github\&.com/chjj/compton \&.
+.SH "AUTHORS"
+.sp
+Christopher Jeffrey (https://github\&.com/chjj)\&.
+.SH "SEE ALSO"
+.sp
+\fBcompton\fR(1), \fBxprop\fR(1), \fBxwininfo\fR(1)

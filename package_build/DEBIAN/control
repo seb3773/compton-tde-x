@@ -1,0 +1,10 @@
+Package: compton-tde
+Version: 1.0
+Section: x11
+Priority: optional
+Architecture: amd64
+Depends: tdebase-trinity, libx11-6, libxcomposite1, libxdamage1, libxfixes3, libxrender1, libconfig11
+Maintainer: seb3773 <seb3773@github.com>
+Description: Optimized compton compositor for Trinity Desktop
+ High performance GL/XRender compositor for TDE.
+ Compiled with -O3 -ffast-math -flto.
