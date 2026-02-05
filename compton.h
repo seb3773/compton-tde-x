@@ -775,19 +775,7 @@ wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def);
 static bool
 init_filters(session_t *ps);
 
-/**
- * Reread opacity property of a window.
- */
-static inline void
-win_update_opacity_prop(session_t *ps, win *w) {
-  w->opacity_prop = wid_get_opacity_prop(ps, w->id, OPAQUE);
-  if (!ps->o.detect_client_opacity || !w->client_win
-      || w->id == w->client_win)
-    w->opacity_prop_client = OPAQUE;
-  else
-    w->opacity_prop_client = wid_get_opacity_prop(ps, w->client_win,
-          OPAQUE);
-}
+
 
 static double
 get_opacity_percent(win *w);
@@ -846,11 +834,9 @@ win_update_shape_raw(session_t *ps, win *w);
 static void
 win_update_shape(session_t *ps, win *w);
 
-static void
-win_update_prop_shadow_raw(session_t *ps, win *w);
 
-static void
-win_update_prop_shadow(session_t *ps, win *w);
+
+
 
 static void
 win_set_shadow(session_t *ps, win *w, bool shadow_new);

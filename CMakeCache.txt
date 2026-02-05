@@ -249,6 +249,9 @@ WITH_OPENGL:BOOL=ON
 //Enable PCRE2 regex support
 WITH_PCRE2:BOOL=ON
 
+//Disable all console logging (printf_err/xerror)
+WITH_SILENT_BUILD:BOOL=ON
+
 //Enable XComposite support
 WITH_XCOMPOSITE:BOOL=ON
 

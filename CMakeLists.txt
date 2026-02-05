@@ -16,6 +16,11 @@ option(WITH_LIBCONFIG "Enable libconfig support" ON)
 option(WITH_XINERAMA "Enable Xinerama support" ON)
 option(WITH_XRANDR "Enable XRandr support" ON)
 option(WITH_DBUS "Enable DBus support" ON)
+option(WITH_SILENT_BUILD "Disable all console logging (printf_err/xerror)" OFF)
+
+if(WITH_SILENT_BUILD)
+    add_definitions(-DDISABLE_LOGGING)
+endif()
 
 if(NOT WITH_XRENDER)
     message(FATAL_ERROR "xrender support is needed to build compton-tde. Pass -DWITH_XRENDER=ON")

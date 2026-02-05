@@ -9,8 +9,21 @@ It has been decoupled from the core TDE build system to ensure portability acros
 *   **Portability**: Automatically detects the version of `libconfig` (legacy vs modern) and adapts the source code accordingly.
 *   **Size Optimization**: 
     - Hardcoded aggressive optimization flags (`-O2`, `-flto`, `-fvisibility=hidden`, etc.) to minimize binary size.
-    - Stripped section headers (requires `sstrip` or standard `strip`) to achieve a binary size of **~190KB** (comparable to stock builds).
+    - Stripped section headers (requires `sstrip` or standard `strip`) to achieve a binary size of **~175KB** (vs ~250KB stock).
+*   **Silent Build**: Optional `-DWITH_SILENT_BUILD=ON` flag to remove all console logging strings, saving ~20KB.
+*   **Code Optimization**:
+    - **Region Cache**: Implemented a stack-based cache for `XFixesCreateRegion` to reduce X server round-trips.
+    - **Picture Format Cache**: Cached `XRenderFindVisualFormat` lookups for hot paths, reducing function call overhead.
+    - **Disable Debug Logging**: Configured `printf_dbg` to compile to no-ops when not debugging.
+    - **Compiler Hints**: Added `HOT`/`COLD` attributes and `likely`/`unlikely` branch prediction hints.
+    - **Structure Packing**: Reordered `struct _win` members to eliminate padding, improving cache testing.
+    - **Data Types**: Switched to `float` for shadow convolution and `uint16_t` for coordinates to reduce memory usage.
+    - **Code Refactoring**: Implemented generic `FREE` macros and merged duplicate window property update functions to reduce binary size.
 *   **Configuration**: Full support for `libconfig` parsing and PCRE2 regex is included.
+*   **OpenGL Backend**: Explicitly enabled (`-DWITH_OPENGL=ON`) to ensure hardware acceleration is available.
+*   **Bug Fix**: Patched a critical `use-after-free` crash in `c2.c` (legacy TDE bug I think).
+    *   *Issue*: The original code freed a string (`tstr`) and then immediately accessed it for validity checks, leading to potential crashes during config parsing.
+    *   *Fix*: Reordered the logic to ensure the string is only freed *after* it has been used. This improves stability, especially with complex configurations.
 
 ## Requirements
 

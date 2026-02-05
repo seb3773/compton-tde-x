@@ -12,6 +12,29 @@
 #include "compton.h"
 #include <ctype.h>
 
+// --- Region Cache ---
+#define REGION_CACHE_SIZE 128
+static XserverRegion region_cache[REGION_CACHE_SIZE];
+static int region_cache_count = 0;
+
+static XserverRegion rc_create_region(session_t *ps) {
+    if (region_cache_count > 0) {
+        return region_cache[--region_cache_count];
+    }
+    return XFixesCreateRegion(ps->dpy, NULL, 0);
+}
+
+static void rc_destroy_region(session_t *ps, XserverRegion r) {
+    if (region_cache_count < REGION_CACHE_SIZE) {
+        // We do not clear the region here because most targets (Union/Intersect)
+        // overwrite the destination anyway.
+        region_cache[region_cache_count++] = r;
+    } else {
+        XFixesDestroyRegion(ps->dpy, r);
+    }
+}
+// --------------------
+
 // === Global constants ===
 
 /// Name strings for window types.
@@ -89,6 +112,11 @@ const static char *background_props_str[] = {
 };
 
 // === Global variables ===
+
+static void win_update_prop_int(session_t *ps, win *w, Atom atom, void *target, size_t size, Atom type);
+static void win_update_opacity_prop(session_t *ps, win *w);
+static void win_update_prop_shadow_raw(session_t *ps, win *w);
+static void win_update_prop_shadow(session_t *ps, win *w);
 
 /// Pointer to current session, as a global variable. Only used by
 /// <code>xerror()</code>, <code>unlink_pid_file</code> and signal handlers,
@@ -191,9 +219,9 @@ make_gaussian_map(double r) {
   double t;
   double g;
 
-  c = malloc(sizeof(conv) + size * size * sizeof(double));
+  c = malloc(sizeof(conv) + size * size * sizeof(float));
   c->size = size;
-  c->data = (double *) (c + 1);
+  c->data = (float *) (c + 1);
   t = 0.0;
 
   for (y = 0; y < size; y++) {
@@ -234,8 +262,8 @@ static unsigned char
 sum_gaussian(conv *map, double opacity,
              int x, int y, int width, int height) {
   int fx, fy;
-  double *g_data;
-  double *g_line = map->data;
+  float *g_data;
+  float *g_line = map->data;
   int g_size = map->size;
   int center = g_size / 2;
   int fx_start, fx_end;
@@ -515,16 +543,11 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
 shadow_picture_err:
   if (shadow_image)
     XDestroyImage(shadow_image);
-  if (shadow_pixmap)
-    XFreePixmap(ps->dpy, shadow_pixmap);
-  if (shadow_pixmap_argb)
-    XFreePixmap(ps->dpy, shadow_pixmap_argb);
-  if (shadow_picture)
-    XRenderFreePicture(ps->dpy, shadow_picture);
-  if (shadow_picture_argb)
-    XRenderFreePicture(ps->dpy, shadow_picture_argb);
-  if (gc)
-    XFreeGC(ps->dpy, gc);
+  FREE_XRES(ps, shadow_pixmap, XFreePixmap);
+  FREE_XRES(ps, shadow_pixmap_argb, XFreePixmap);
+  FREE_XRES(ps, shadow_picture, XRenderFreePicture);
+  FREE_XRES(ps, shadow_picture_argb, XRenderFreePicture);
+  FREE_XRES(ps, gc, XFreeGC);
 
   return false;
 }
@@ -916,7 +939,9 @@ win_get_region(session_t *ps, win *w, bool use_offset) {
   r.width = w->widthb;
   r.height = w->heightb;
 
-  return XFixesCreateRegion(ps->dpy, &r, 1);
+  XserverRegion r2 = rc_create_region(ps);
+  XFixesSetRegion(ps->dpy, r2, &r, 1);
+  return r2;
 }
 
 /**
@@ -931,10 +956,12 @@ win_get_region_noframe(session_t *ps, win *w, bool use_offset) {
   r.width = max_i(w->a.width - w->left_width - w->right_width, 0);
   r.height = max_i(w->a.height - w->top_width - w->bottom_width, 0);
 
-  if (r.width > 0 && r.height > 0)
-    return XFixesCreateRegion(ps->dpy, &r, 1);
-  else
-    return XFixesCreateRegion(ps->dpy, NULL, 0);
+  if (r.width > 0 && r.height > 0) {
+    XserverRegion r2 = rc_create_region(ps);
+    XFixesSetRegion(ps->dpy, r2, &r, 1);
+    return r2;
+  } else
+    return rc_create_region(ps);
 }
 
 /**
@@ -979,7 +1006,9 @@ win_extents(session_t *ps, win *w) {
     }
   }
 
-  return XFixesCreateRegion(ps->dpy, &r, 1);
+  XserverRegion r2 = rc_create_region(ps);
+  XFixesSetRegion(ps->dpy, r2, &r, 1);
+  return r2;
 }
 
 /**
@@ -1017,7 +1046,7 @@ border_size(session_t *ps, win *w, bool use_offset) {
     // make sure the bounding region is not bigger than the window
     // rectangle
     XFixesIntersectRegion(ps->dpy, fin, fin, border);
-    XFixesDestroyRegion(ps->dpy, border);
+    rc_destroy_region(ps, border);
   }
 
   return fin;
@@ -1102,7 +1131,7 @@ get_alpha_pict_o(session_t *ps, opacity_t o) {
   return get_alpha_pict_d(ps, (double) o / OPAQUE);
 }
 
-static win *
+static win * HOT
 paint_preprocess(session_t *ps, win *list) {
   win *t = NULL, *next = NULL;
 
@@ -1112,7 +1141,7 @@ paint_preprocess(session_t *ps, win *list) {
     steps = ((get_time_ms() - ps->fade_time) + FADE_DELTA_TOLERANCE * ps->o.fade_delta) / ps->o.fade_delta;
   }
   // Reset fade_time if unset, or there appears to be a time disorder
-  if (!ps->fade_time || steps < 0L) {
+  if (unlikely(!ps->fade_time || steps < 0L)) {
     ps->fade_time = get_time_ms();
     steps = 0L;
   }
@@ -1123,7 +1152,7 @@ paint_preprocess(session_t *ps, win *list) {
   bool unredir_possible = false;
   // Trace whether it's the highest window to paint
   bool is_highest = true;
-  for (win *w = list; w; w = next) {
+  for (win *w = list; unlikely(w); w = next) {
     bool to_paint = true;
     const winmode_t mode_old = w->mode;
 
@@ -1134,16 +1163,16 @@ paint_preprocess(session_t *ps, win *list) {
     // Data expiration
     {
       // Remove built shadow if needed
-      if (w->flags & WFLAG_SIZE_CHANGE)
+      if (unlikely(w->flags & WFLAG_SIZE_CHANGE))
         free_paint(ps, &w->shadow_paint);
 
       // Destroy reg_ignore on all windows if they should expire
-      if (ps->reg_ignore_expire)
+      if (unlikely(ps->reg_ignore_expire))
         free_region(ps, &w->reg_ignore);
     }
 
     // Restore flags from last paint if the window is being faded out
-    if (IsUnmapped == w->a.map_state) {
+    if (unlikely(IsUnmapped == w->a.map_state)) {
       win_set_shadow(ps, w, w->shadow_last);
       w->fade = w->fade_last;
       win_set_invert_color(ps, w, w->invert_color_last);
@@ -1152,7 +1181,7 @@ paint_preprocess(session_t *ps, win *list) {
     }
 
     // Update window opacity target and dim state if asked
-    if (WFLAG_OPCT_CHANGE & w->flags) {
+    if (unlikely(WFLAG_OPCT_CHANGE & w->flags)) {
       calc_opacity(ps, w);
       calc_dim(ps, w);
     }
@@ -1165,27 +1194,27 @@ paint_preprocess(session_t *ps, win *list) {
     // Give up if it's not damaged or invisible, or it's unmapped and its
     // pixmap is gone (for example due to a ConfigureNotify), or when it's
     // excluded
-    if (!w->damaged
+    if (unlikely(!w->damaged
         || w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
         || w->a.x >= ps->root_width || w->a.y >= ps->root_height
         || ((IsUnmapped == w->a.map_state || w->destroyed) && !w->paint.pixmap)
         || get_alpha_pict_o(ps, w->opacity) == ps->alpha_picts[0]
-        || w->paint_excluded)
+        || w->paint_excluded))
       to_paint = false;
 
     // to_paint will never change afterward
 
     // Determine mode as early as possible
-    if (to_paint && (!w->to_paint || w->opacity != opacity_old))
+    if (unlikely(to_paint && (!w->to_paint || w->opacity != opacity_old)))
       win_determine_mode(ps, w);
 
     if (to_paint) {
       // Fetch bounding region
-      if (!w->border_size)
+      if (unlikely(!w->border_size))
         w->border_size = border_size(ps, w, true);
 
       // Fetch window extents
-      if (!w->extents)
+      if (unlikely(!w->extents))
         w->extents = win_extents(ps, w);
 
       // Calculate frame_opacity
@@ -1201,8 +1230,8 @@ paint_preprocess(session_t *ps, win *list) {
 
         // Destroy all reg_ignore above when frame opaque state changes on
         // SOLID mode
-        if (w->to_paint && WMODE_SOLID == mode_old
-            && (0.0 == frame_opacity_old) != (0.0 == w->frame_opacity))
+        if (unlikely(w->to_paint && WMODE_SOLID == mode_old
+            && (0.0 == frame_opacity_old) != (0.0 == w->frame_opacity)))
           ps->reg_ignore_expire = true;
       }
 
@@ -1215,17 +1244,17 @@ paint_preprocess(session_t *ps, win *list) {
 
     // Add window to damaged area if its painting status changes
     // or opacity changes
-    if (to_paint != w->to_paint || w->opacity != opacity_old)
+    if (unlikely(to_paint != w->to_paint || w->opacity != opacity_old))
       add_damage_win(ps, w);
 
     // Destroy all reg_ignore above when window mode changes
-    if ((to_paint && WMODE_SOLID == w->mode)
-        != (w->to_paint && WMODE_SOLID == mode_old))
+    if (unlikely((to_paint && WMODE_SOLID == w->mode)
+        != (w->to_paint && WMODE_SOLID == mode_old)))
       ps->reg_ignore_expire = true;
 
     if (to_paint) {
       // Generate ignore region for painting to reduce GPU load
-      if (ps->reg_ignore_expire || !w->to_paint) {
+      if (unlikely(ps->reg_ignore_expire || !w->to_paint)) {
         free_region(ps, &w->reg_ignore);
 
         // If the window is solid, we add the window region to the
@@ -1354,7 +1383,7 @@ static inline Picture
 xr_build_picture(session_t *ps, int wid, int hei,
     XRenderPictFormat *pictfmt) {
   if (!pictfmt)
-    pictfmt = XRenderFindVisualFormat(ps->dpy, ps->vis);
+    pictfmt = ps->vis_pict_format;
 
   int depth = pictfmt->depth;
 
@@ -1609,7 +1638,7 @@ win_greyscale_background(session_t *ps, win *w, Picture tgt_buffer,
   }
 }
 
-static void
+static void HOT
 render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
     Picture pict, glx_texture_t *ptex,
@@ -1901,7 +1930,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 static void
 rebuild_screen_reg(session_t *ps) {
   if (ps->screen_reg)
-    XFixesDestroyRegion(ps->dpy, ps->screen_reg);
+    rc_destroy_region(ps, ps->screen_reg);
   ps->screen_reg = get_screen_region(ps);
 }
 
@@ -1990,7 +2019,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   if (t && t->reg_ignore) {
     // Calculate the region upon which the root window is to be painted
     // based on the ignore region of the lowest window, if available
-    reg_paint = reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
+    reg_paint = reg_tmp = rc_create_region(ps);
     XFixesSubtractRegion(ps->dpy, reg_paint, region, t->reg_ignore);
   }
   else {
@@ -2002,8 +2031,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 
   // Create temporary regions for use during painting
   if (!reg_tmp)
-    reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
-  reg_tmp2 = XFixesCreateRegion(ps->dpy, NULL, 0);
+    reg_tmp = rc_create_region(ps);
+  reg_tmp2 = rc_create_region(ps);
 
   for (win *w = t; w; w = w->prev_trans) {
     // Painting shadow
@@ -2156,8 +2185,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
 
   // Free up all temporary regions
-  XFixesDestroyRegion(ps->dpy, reg_tmp);
-  XFixesDestroyRegion(ps->dpy, reg_tmp2);
+  rc_destroy_region(ps, reg_tmp);
+  rc_destroy_region(ps, reg_tmp2);
 
   // Do this as early as possible
   if (!ps->o.dbe)
@@ -2251,7 +2280,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
 #endif
 
-  XFixesDestroyRegion(ps->dpy, region);
+  rc_destroy_region(ps, region);
 
 #ifdef DEBUG_REPAINT
   print_timestamp(ps);
@@ -2304,7 +2333,7 @@ repair_win(session_t *ps, win *w) {
     set_ignore_next(ps);
     XDamageSubtract(ps->dpy, w->damage, None, None);
   } else {
-    parts = XFixesCreateRegion(ps->dpy, 0, 0);
+    parts = rc_create_region(ps);
     set_ignore_next(ps);
     XDamageSubtract(ps->dpy, w->damage, None, parts);
     XFixesTranslateRegion(ps->dpy, parts,
@@ -2921,7 +2950,7 @@ win_determine_fade(session_t *ps, win *w) {
 
     w->fade = false;
   }
-  else if (ps->o.wintype_fade[w->window_type] != NULL) {
+  else if (ps->o.wintype_fade[w->window_type]) {
       w->fade = ps->o.wintype_fade[w->window_type];
 #ifdef DEBUG_FADE
       printf_dbgf("(%#010lx): via wintype_fade[%s]\n",
@@ -2972,23 +3001,60 @@ win_update_shape(session_t *ps, win *w) {
 }
 
 /**
- * Reread _TDE_WM_WINDOW_SHADOW property from a window.
- *
- * The property must be set on the outermost window, usually the WM frame.
+ * Generic function to update a window property of int type.
  */
 static void
-win_update_prop_shadow_raw(session_t *ps, win *w) {
-  winprop_t prop = wid_get_prop(ps, w->id, ps->atom_compton_shadow, 1,
-      XA_CARDINAL, 32);
+win_update_prop_int(session_t *ps, win *w, Atom atom, void *target,
+    size_t size, Atom type) {
+  winprop_t prop = wid_get_prop(ps, w->id, atom, 1, type, 32);
 
   if (!prop.nitems) {
-    w->prop_shadow = -1;
+    if (size == sizeof(uint32_t)) *(uint32_t *)target = -1;
+    else if (size == sizeof(long)) *(long *)target = -1;
   }
   else {
-    w->prop_shadow = *prop.data.p32;
+    if (size == sizeof(uint32_t)) *(uint32_t *)target = *prop.data.p32;
+    // Handle long for prop_shadow (which is long in struct win)
+    else if (size == sizeof(long)) *(long *)target = *prop.data.p32;
   }
 
   free_winprop(&prop);
+}
+
+/**
+ * Reread _NET_WM_OPACITY.
+ */
+static void
+win_update_opacity_prop(session_t *ps, win *w) {
+  if (!ps->o.detect_client_opacity || !w->client_win
+      || w->client_win == w->id) {
+    win_update_prop_int(ps, w, ps->atom_opacity, &w->opacity_prop,
+      sizeof(opacity_t), XA_CARDINAL);
+  }
+  else {
+    // Logic for client window opacity logic remains specific
+    winprop_t prop = wid_get_prop(ps, w->client_win, ps->atom_opacity, 1,
+        XA_CARDINAL, 32);
+    if (prop.nitems) {
+      w->opacity_prop_client = *prop.data.p32;
+    }
+    else {
+      w->opacity_prop_client = OPAQUE;
+    }
+    free_winprop(&prop);
+
+    win_update_prop_int(ps, w, ps->atom_opacity, &w->opacity_prop,
+      sizeof(opacity_t), XA_CARDINAL);
+  }
+}
+
+/**
+ * Reread _TDE_WM_WINDOW_SHADOW property from a window.
+ */
+static void
+win_update_prop_shadow_raw(session_t *ps, win *w) {
+  win_update_prop_int(ps, w, ps->atom_compton_shadow, &w->prop_shadow,
+      sizeof(long), XA_CARDINAL);
 }
 
 /**
@@ -3675,7 +3741,7 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
 
     w->need_configure = false;
 
-    damage = XFixesCreateRegion(ps->dpy, 0, 0);
+    damage = rc_create_region(ps);
     if (w->extents != None) {
       XFixesCopyRegion(ps->dpy, damage, w->extents);
     }
@@ -3712,7 +3778,7 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
     if (damage) {
       XserverRegion extents = win_extents(ps, w);
       XFixesUnionRegion(ps->dpy, damage, damage, extents);
-      XFixesDestroyRegion(ps->dpy, extents);
+      rc_destroy_region(ps, extents);
       add_damage(ps, damage);
     }
 
@@ -3819,7 +3885,7 @@ root_damaged(session_t *ps) {
       free_root_tile(ps);
     /* }
     if (root_damage) {
-      XserverRegion parts = XFixesCreateRegion(ps->dpy, 0, 0);
+      XserverRegion parts = rc_create_region(ps);
       XDamageSubtract(ps->dpy, root_damage, None, parts);
       add_damage(ps, parts);
     } */
@@ -3847,7 +3913,7 @@ damage_win(session_t *ps, XDamageNotifyEvent *de) {
 /**
  * Xlib error handler function.
  */
-static int
+static int COLD
 xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   session_t * const ps = ps_g;
 
@@ -3937,9 +4003,11 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   {
     char buf[BUF_LEN] = "";
     XGetErrorText(ps->dpy, ev->error_code, buf, BUF_LEN);
+#ifndef DISABLE_LOGGING
     printf("error %4d %-12s request %4d minor %4d serial %6lu: \"%s\"\n",
         ev->error_code, name, ev->request_code,
         ev->minor_code, ev->serial, buf);
+#endif
   }
 
   // print_backtrace();
@@ -3950,7 +4018,8 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 static void
 expose_root(session_t *ps, XRectangle *rects, int nrects) {
   free_all_damage_last(ps);
-  XserverRegion region = XFixesCreateRegion(ps->dpy, rects, nrects);
+  XserverRegion region = rc_create_region(ps);
+  XFixesSetRegion(ps->dpy, region, rects, nrects);
   add_damage(ps, region);
 }
 
@@ -7184,10 +7253,10 @@ init_overlay(session_t *ps) {
   if (ps->overlay) {
     // Set window region of the overlay window, code stolen from
     // compiz-0.8.8
-    XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
+    XserverRegion region = rc_create_region(ps);
     XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeBounding, 0, 0, 0);
     XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeInput, 0, 0, region);
-    XFixesDestroyRegion(ps->dpy, region);
+    rc_destroy_region(ps, region);
 
     // Listen to Expose events on the overlay
     XSelectInput(ps->dpy, ps->overlay, ExposureMask);
@@ -7602,7 +7671,8 @@ cxinerama_upd_scrs(session_t *ps) {
     const XineramaScreenInfo * const s = &ps->xinerama_scrs[i];
     XRectangle r = { .x = s->x_org, .y = s->y_org,
       .width = s->width, .height = s->height };
-    ps->xinerama_scr_regs[i] = XFixesCreateRegion(ps->dpy, &r, 1);
+    ps->xinerama_scr_regs[i] = rc_create_region(ps);
+    XFixesSetRegion(ps->dpy, ps->xinerama_scr_regs[i], &r, 1);
   }
 #endif
 }
@@ -7848,6 +7918,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->root = RootWindow(ps->dpy, ps->scr);
 
   ps->vis = DefaultVisual(ps->dpy, ps->scr);
+  ps->vis_pict_format = XRenderFindVisualFormat(ps->dpy, ps->vis);
   ps->depth = DefaultDepth(ps->dpy, ps->scr);
 
   // Start listening to events on root earlier to catch all possible

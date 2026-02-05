@@ -171,7 +171,46 @@
 /// @brief Wrapper for gcc branch prediction builtin, for unlikely branch.
 #define unlikely(x)  __builtin_expect(!!(x), 0)
 
+/// @brief Wrapper for gcc hot attribute.
+#define HOT __attribute__((hot))
+
+/// @brief wrapper for gcc cold attribute
+#define COLD __attribute__((cold))
+
+/// Free a pointer and set it to NULL.
+#define FREE(ptr) \
+  do { \
+    if (ptr) { \
+      free(ptr); \
+      ptr = NULL; \
+    } \
+  } while (0)
+
+/// Free an X resource and set it to 0.
+#define FREE_XRES(ps, res, func) \
+  do { \
+    if (res) { \
+      func((ps)->dpy, (res)); \
+      res = 0; \
+    } \
+  } while (0)
+
+/// Free a generic X resource (XFree) and set it to NULL.
+#define XFREE(ptr) \
+  do { \
+    if (ptr) { \
+      XFree((void *) (ptr)); \
+      ptr = NULL; \
+    } \
+  } while (0)
+
 /// Print out an error message.
+/// Print out an error message.
+#ifdef DISABLE_LOGGING
+#define printf_err(format, ...) ((void)0)
+#define printf_errf(format, ...) ((void)0)
+#define printf_errfq(code, format, ...) exit(code)
+#else
 #define printf_err(format, ...) \
   fprintf(stderr, format "\n", ## __VA_ARGS__)
 
@@ -185,11 +224,16 @@
   printf_err("%s" format,  __func__, ## __VA_ARGS__); \
   exit(code); \
 }
+#endif
 
 /// Print out a debug message.
+#ifdef DEBUG
 #define printf_dbg(format, ...) \
   printf(format, ## __VA_ARGS__); \
   fflush(stdout)
+#else
+#define printf_dbg(format, ...) ((void)0)
+#endif
 
 /// Print out a debug message with function name.
 #define printf_dbgf(format, ...) \
@@ -546,7 +590,7 @@ typedef struct {
 
 typedef struct {
   int size;
-  double *data;
+  float *data;
 } conv;
 
 /// Linked list type of atoms.
@@ -850,6 +894,8 @@ typedef struct _session_t {
   int scr;
   /// Default visual.
   Visual *vis;
+  /// Cached format of default visual.
+  XRenderPictFormat *vis_pict_format;
   /// Default depth.
   int depth;
   /// Root window.
@@ -1106,97 +1152,13 @@ typedef struct _session_t {
 
 /// Structure representing a top-level window compton manages.
 typedef struct _win {
-  /// Pointer to the next structure in the linked list.
+  // === Pointers (8 bytes) ===
   struct _win *next;
-  /// Pointer to the next higher window to paint.
   struct _win *prev_trans;
-
-  // Core members
-  /// ID of the top-level frame window.
-  Window id;
-  /// Window attributes.
-  XWindowAttributes a;
-#ifdef CONFIG_XINERAMA
-  /// Xinerama screen this window is on.
-  int xinerama_scr;
-#endif
-  /// Window visual pict format;
   XRenderPictFormat *pictfmt;
-  /// Window painting mode.
-  winmode_t mode;
-  /// Whether the window has been damaged at least once.
-  bool damaged;
-#ifdef CONFIG_XSYNC
-  /// X Sync fence of drawable.
-  XSyncFence fence;
-#endif
-  /// Whether the window was damaged after last paint.
-  bool pixmap_damaged;
-  /// Damage of the window.
-  Damage damage;
-  /// Paint info of the window.
-  paint_t paint;
-  /// Bounding shape of the window.
-  XserverRegion border_size;
-  /// Region of the whole window, shadow region included.
-  XserverRegion extents;
-  /// Window flags. Definitions above.
-  int_fast16_t flags;
-  /// Whether there's a pending <code>ConfigureNotify</code> happening
-  /// when the window is unmapped.
-  bool need_configure;
-  /// Queued <code>ConfigureNotify</code> when the window is unmapped.
-  XConfigureEvent queue_configure;
-  /// Region to be ignored when painting. Basically the region where
-  /// higher opaque windows will paint upon. Depends on window frame
-  /// opacity state, window geometry, window mapped/unmapped state,
-  /// window mode, of this and all higher windows.
-  XserverRegion reg_ignore;
-  /// Cached width/height of the window including border.
-  int widthb, heightb;
-  /// Whether the window has been destroyed.
-  bool destroyed;
-  /// Whether the window is bounding-shaped.
-  bool bounding_shaped;
-  /// Whether the window just have rounded corners.
-  bool rounded_corners;
-  /// Whether this window is to be painted.
-  bool to_paint;
-  /// Whether the window is painting excluded.
-  bool paint_excluded;
-  /// Whether the window is unredirect-if-possible excluded.
-  bool unredir_if_possible_excluded;
-  /// Whether this window is in open/close state.
-  bool in_openclose;
-
-  // Client window related members
-  /// ID of the top-level client window of the window.
-  Window client_win;
-  /// Type of the window.
-  wintype_t window_type;
-  /// Whether it looks like a WM window. We consider a window WM window if
-  /// it does not have a decedent with WM_STATE and it is not override-
-  /// redirected itself.
-  bool wmwin;
-  /// Leader window ID of the window.
-  Window leader;
-  /// Cached topmost window ID of the window.
-  Window cache_leader;
-
-  // Focus-related members
-  /// Whether the window is to be considered focused.
-  bool focused;
-  /// Override value of window focus state. Set by D-Bus method calls.
-  switch_t focused_force;
-
-  // Blacklist related members
-  /// Name of the window.
   char *name;
-  /// Window instance class of the window.
   char *class_instance;
-  /// Window general class of the window.
   char *class_general;
-  /// <code>WM_WINDOW_ROLE</code> value of the window.
   char *role;
   const c2_lptr_t *cache_sblst;
   const c2_lptr_t *cache_fblst;
@@ -1206,101 +1168,83 @@ typedef struct _win {
   const c2_lptr_t *cache_oparule;
   const c2_lptr_t *cache_pblst;
   const c2_lptr_t *cache_uipblst;
-
-  // Opacity-related members
-  /// Current window opacity.
-  opacity_t opacity;
-  /// Target window opacity.
-  opacity_t opacity_tgt;
-  /// Cached value of opacity window attribute.
-  opacity_t opacity_prop;
-  /// Cached value of opacity window attribute on client window. For
-  /// broken window managers not transferring client window's
-  /// _NET_WM_OPACITY value
-  opacity_t opacity_prop_client;
-  /// Last window opacity value we set.
-  opacity_t opacity_set;
-
-  // Fading-related members
-  /// Do not fade if it's false. Change on window type change.
-  /// Used by fading blacklist in the future.
-  bool fade;
-  /// Fade state on last paint.
-  bool fade_last;
-  /// Override value of window fade state. Set by D-Bus method calls.
-  switch_t fade_force;
-  /// Callback to be called after fading completed.
   void (*fade_callback) (session_t *ps, struct _win *w);
 
-  // Frame-opacity-related members
-  /// Current window frame opacity. Affected by window opacity.
-  double frame_opacity;
-  /// Frame widths. Determined by client window attributes.
-  unsigned int left_width, right_width, top_width, bottom_width;
-
-  // Shadow-related members
-  /// Whether a window has shadow. Calculated.
-  bool shadow;
-  /// Shadow state on last paint.
-  bool shadow_last;
-  /// Override value of window shadow state. Set by D-Bus method calls.
-  switch_t shadow_force;
-  /// Opacity of the shadow. Affected by window opacity and frame opacity.
-  double shadow_opacity;
-  /// X offset of shadow. Affected by commandline argument.
-  int shadow_dx;
-  /// Y offset of shadow. Affected by commandline argument.
-  int shadow_dy;
-  /// Width of shadow. Affected by window size and commandline argument.
-  int shadow_width;
-  /// Height of shadow. Affected by window size and commandline argument.
-  int shadow_height;
-  /// Relative size of shadow.
-  int shadow_size;
-  /// Picture to render shadow. Affected by window size.
-  paint_t shadow_paint;
-  /// The value of _TDE_WM_WINDOW_SHADOW attribute of the window. Below 0 for
-  /// none.
+  // === XIDs / Longs / Doubles (8 bytes) ===
+  Window id;
+  Window client_win;
+  Window leader;
+  Window cache_leader;
+  Damage damage;
+  XserverRegion border_size;
+  XserverRegion extents;
+  XserverRegion reg_ignore;
   long prop_shadow;
+  double frame_opacity;
+  double shadow_opacity;
 
-  // Dim-related members
-  /// Whether the window is to be dimmed.
-  bool dim;
-
-  /// Whether to invert window color.
-  bool invert_color;
-  /// Color inversion state on last paint.
-  bool invert_color_last;
-  /// Override value of window color inversion state. Set by D-Bus method
-  /// calls.
+  // === Ints / Enums (4 bytes) ===
+  winmode_t mode;
+  wintype_t window_type;
+  int_fast16_t flags; // Usually 4 bytes on 64-bit int
+  int xinerama_scr;
+  uint16_t widthb, heightb;
+  opacity_t opacity;
+  opacity_t opacity_tgt;
+  opacity_t opacity_prop;
+  opacity_t opacity_prop_client;
+  opacity_t opacity_set;
+  int16_t shadow_dx;
+  int16_t shadow_dy;
+  int shadow_width;
+  int shadow_height;
+  int shadow_size;
+  uint16_t left_width, right_width, top_width, bottom_width;
+  int greyscale_blended_background_alpha_divisor;
+  switch_t focused_force;
+  switch_t fade_force;
+  switch_t shadow_force;
   switch_t invert_color_force;
 
-  /// Whether to blur window background.
+  // === Bools (1 byte) ===
+  bool damaged;
+  bool pixmap_damaged;
+  bool need_configure;
+  bool destroyed;
+  bool bounding_shaped;
+  bool rounded_corners;
+  bool to_paint;
+  bool paint_excluded;
+  bool unredir_if_possible_excluded;
+  bool in_openclose;
+  bool wmwin;
+  bool focused;
+  bool fade;
+  bool fade_last;
+  bool shadow;
+  bool shadow_last;
+  bool dim;
+  bool invert_color;
+  bool invert_color_last;
   bool blur_background;
-  /// Background state on last paint.
   bool blur_background_last;
-
-  /// Whether to set window background to greyscale.
   bool greyscale_background;
-  /// Background state on last paint.
   bool greyscale_background_last;
-
-  /// Whether to set window background to blended greyscale.
   bool greyscale_blended_background;
-  /// Blended greyscale alpha divisor.
-  int greyscale_blended_background_alpha_divisor;
-
-  /// Whether to show black background
   bool show_black_background;
-
-  /// Whether to show desktop background
   bool show_root_tile;
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
-  /// Textures and FBO background blur use.
-  glx_blur_cache_t glx_blur_cache;
+  // === Structs (Large / Mixed) ===
+  XWindowAttributes a;
+#ifdef CONFIG_XSYNC
+  XSyncFence fence;
+#endif
+  paint_t paint;
+  XConfigureEvent queue_configure;
+  paint_t shadow_paint;
 
-  /// Textures and FBO greyscale background use.
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  glx_blur_cache_t glx_blur_cache;
   glx_greyscale_cache_t glx_greyscale_cache;
 #endif
 } win;
