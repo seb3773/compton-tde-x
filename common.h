@@ -287,6 +287,20 @@
 /// @brief Maximum passes for blur.
 #define MAX_BLUR_PASS 5
 
+/// @brief Blur methods supported by the GLX backend.
+typedef enum {
+  BLUR_METHOD_NONE       = 0,
+  BLUR_METHOD_KERNEL,        // convolution (box / gaussian / custom)
+  BLUR_METHOD_DUAL_KAWASE    // dual-filter kawase (picom-derived)
+} blur_method_t;
+
+/// @brief Precomputed parameters for a given dual-kawase strength level.
+typedef struct {
+  int   iterations; // number of down+up passes (1..5)
+  float offset;     // half-pixel sample offset baked into shader
+  int   expand;     // border expansion to avoid edge artifacts
+} dual_kawase_params_t;
+
 // Window flags
 
 // Window size is changed
@@ -532,6 +546,17 @@ typedef struct {
   /// Height of the textures.
   int height;
 } glx_blur_cache_t;
+
+/// @brief Per-session GL state for dual-kawase blur (down + up programs).
+typedef struct {
+  GLuint prog_down;      // downsample GLSL program
+  GLuint prog_up;        // upsample GLSL program
+  GLint  unifm_px_norm;  // location of pixel_norm uniform (down pass)
+  GLint  unifm_scale_d;  // location of scale uniform (down pass)
+  GLint  unifm_px_norm_u;// location of pixel_norm uniform (up pass)
+  GLint  unifm_scale_u;  // location of scale uniform (up pass)
+  GLint  unifm_opacity;  // location of opacity uniform (up pass)
+} glx_kawase_pass_t;
 
 typedef struct {
   /// Fragment shader for greyscale.
@@ -784,6 +809,10 @@ typedef struct _options_t {
   c2_lptr_t *blur_background_blacklist;
   /// Blur convolution kernel.
   XFixed *blur_kerns[MAX_BLUR_PASS];
+  /// Which blur method to use (NONE / KERNEL / DUAL_KAWASE).
+  blur_method_t blur_method;
+  /// Strength level for dual_kawase (1..20, default 5).
+  int blur_strength;
   /// Whether to set background of semi-transparent / ARGB windows to greyscale.
   bool greyscale_background;
   /// Greyscale background blacklist. A linked list of conditions.
@@ -875,6 +904,16 @@ typedef struct {
   glx_fbconfig_t *fbconfigs[OPENGL_MAX_DEPTH + 1];
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
+  // dual-kawase resources
+  glx_kawase_pass_t kawase_pass;               // compiled shaders (shared across iterations)
+  GLuint            kawase_fbos[MAX_BLUR_PASS + 1]; // one FBO per downsample iteration + raw copy
+  GLuint            kawase_textures[MAX_BLUR_PASS + 1]; // one texture per downsample iteration + raw copy
+  int               kawase_tex_w[MAX_BLUR_PASS + 1];    // cached texture widths
+  int               kawase_tex_h[MAX_BLUR_PASS + 1];    // cached texture heights
+  int               kawase_iterations;              // active iteration count
+  float             kawase_offset;                  // sample offset baked at init
+  int               kawase_src_w;                   // last seen source width
+  int               kawase_src_h;                   // last seen source height
 #endif
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   glx_greyscale_t greyscale_glsl;
@@ -2172,6 +2211,16 @@ glx_on_root_change(session_t *ps);
 
 bool
 glx_init_blur(session_t *ps);
+
+bool
+glx_init_blur_kawase(session_t *ps);
+
+void
+glx_dual_kawase_blur(session_t *ps, int x, int y, int width, int height,
+    float z, XserverRegion reg_paint, const reg_data_t *pcache_reg);
+
+void
+glx_destroy_blur_kawase(session_t *ps);
 
 bool
 glx_init_greyscale(session_t *ps);

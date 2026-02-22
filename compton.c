@@ -1638,9 +1638,14 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
       break;
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
     case BKEND_GLX:
-      // TODO: Handle frame opacity
-      glx_blur_dst(ps, x, y, wid, hei, ps->psglx->z - 0.5, factor_center,
-          reg_paint, pcache_reg, &w->glx_blur_cache);
+      if (ps->o.blur_method == BLUR_METHOD_DUAL_KAWASE) {
+        glx_dual_kawase_blur(ps, x, y, wid, hei, ps->psglx->z - 0.5,
+            reg_paint, pcache_reg);
+      } else {
+        // TODO: Handle frame opacity
+        glx_blur_dst(ps, x, y, wid, hei, ps->psglx->z - 0.5, factor_center,
+            reg_paint, pcache_reg, &w->glx_blur_cache);
+      }
       break;
 #endif
     default:
@@ -2208,7 +2213,11 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
         // Blur window background
         if (w->blur_background && (!win_is_solid(ps, w)
               || (ps->o.blur_background_frame && w->frame_opacity))) {
-          win_blur_background(ps, w, ps->tgt_buffer.pict, reg_paint, &cache_reg);
+          // Do not apply blur when the window is actively fading
+          bool is_fading = w->fade && (w->opacity != w->opacity_tgt);
+          if (!is_fading) {
+            win_blur_background(ps, w, ps->tgt_buffer.pict, reg_paint, &cache_reg);
+          }
         }
 
         // Set window background to greyscale
@@ -6357,6 +6366,15 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   if (config_lookup_string(&cfg, "blur-kern", &sval)
       && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS))
     exit(1);
+  // --blur-method
+  if (config_lookup_string(&cfg, "blur-method", &sval)) {
+    if (!strcmp(sval, "dual_kawase") || !strcmp(sval, "dual-kawase") || !strcmp(sval, "kawase"))
+      ps->o.blur_method = BLUR_METHOD_DUAL_KAWASE;
+    else
+      ps->o.blur_method = BLUR_METHOD_KERNEL;
+  }
+  // --blur-strength
+  lcfg_lookup_int(&cfg, "blur-strength", &ps->o.blur_strength);
   // --resize-damage
   lcfg_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
   // --glx-no-stencil
@@ -6735,6 +6753,17 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         if (!parse_conv_kern_lst(ps, optarg, ps->o.blur_kerns, MAX_BLUR_PASS))
           exit(1);
         break;
+      case 335:
+        // --blur-method
+        if (!strcmp(optarg, "dual_kawase") || !strcmp(optarg, "dual-kawase") || !strcmp(optarg, "kawase"))
+          ps->o.blur_method = BLUR_METHOD_DUAL_KAWASE;
+        else
+          ps->o.blur_method = BLUR_METHOD_KERNEL;
+        break;
+      case 336:
+        // --blur-strength
+        ps->o.blur_strength = atoi(optarg);
+        break;
       P_CASELONG(302, resize_damage);
       P_CASEBOOL(303, glx_use_gpushader4);
       case 304:
@@ -6825,6 +6854,20 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   if (ps->o.blur_background_frame)
     ps->o.blur_background = true;
 
+  // Validate dual_kawase options
+  if (ps->o.blur_method == BLUR_METHOD_DUAL_KAWASE) {
+    if (ps->o.backend != BKEND_GLX) {
+      printf_errf("(): --blur-method dual-kawase requires --backend glx, disabling blur.");
+      ps->o.blur_background = false;
+      ps->o.blur_method = BLUR_METHOD_NONE;
+    } else {
+      if (ps->o.blur_strength <= 0) ps->o.blur_strength = 5;
+      if (ps->o.blur_strength > 20) ps->o.blur_strength = 20;
+    }
+  } else if (ps->o.blur_background && ps->o.blur_kerns[0]) {
+    ps->o.blur_method = BLUR_METHOD_KERNEL;
+  }
+
   if (ps->o.xrender_sync_fence)
     ps->o.xrender_sync = true;
 
@@ -6840,8 +6883,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     ps->o.track_leader = true;
   }
 
-  // Fill default blur kernel
-  if (ps->o.blur_background && !ps->o.blur_kerns[0]) {
+  // Fill default blur kernel (not needed for dual_kawase)
+  if (ps->o.blur_background && !ps->o.blur_kerns[0]
+      && ps->o.blur_method != BLUR_METHOD_DUAL_KAWASE) {
     // Convolution filter parameter (box blur)
     // gaussian or binomial filters are definitely superior, yet looks
     // like they aren't supported as of xorg-server-1.13.0
@@ -6860,6 +6904,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       exit(1);
     }
     memcpy(ps->o.blur_kerns[0], &convolution_blur, sizeof(convolution_blur));
+    if (!ps->o.blur_method)
+      ps->o.blur_method = BLUR_METHOD_KERNEL;
   }
 
   rebuild_shadow_exclude_reg(ps);
@@ -7353,8 +7399,17 @@ init_filters(session_t *ps) {
 #ifdef CONFIG_VSYNC_OPENGL
       case BKEND_GLX:
         {
-          if (!glx_init_blur(ps))
-            return false;
+          if (ps->o.blur_method == BLUR_METHOD_DUAL_KAWASE) {
+            if (!glx_init_blur_kawase(ps)) {
+              printf_errf("(): Failed to init dual-kawase blur, falling back to kernel.");
+              ps->o.blur_method = BLUR_METHOD_KERNEL;
+              if (!glx_init_blur(ps))
+                return false;
+            }
+          } else {
+            if (!glx_init_blur(ps))
+              return false;
+          }
         }
 #endif
     }

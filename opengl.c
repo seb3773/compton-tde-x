@@ -1503,6 +1503,257 @@ glx_blur_dst_end:
 }
 #endif
 
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+/**
+ * Generate dual-kawase parameters for the given strength level (1..20).
+ */
+static dual_kawase_params_t
+generate_dual_kawase_params(int strength) {
+  static const struct { int iter; float off; } levels[20] = {
+    {1, 1.25f}, {1, 2.25f}, {2, 2.00f}, {2, 3.00f}, {2, 4.25f},
+    {3, 2.50f}, {3, 3.25f}, {3, 4.25f}, {3, 5.50f}, {4, 3.25f},
+    {4, 4.00f}, {4, 5.00f}, {4, 6.00f}, {4, 7.25f}, {4, 8.25f},
+    {5, 4.50f}, {5, 5.25f}, {5, 6.25f}, {5, 7.25f}, {5, 8.50f},
+  };
+  if (strength < 1)  strength = 1;
+  if (strength > 20) strength = 20;
+  dual_kawase_params_t p;
+  p.iterations = levels[strength - 1].iter;
+  p.offset     = levels[strength - 1].off;
+  p.expand = (1 << p.iterations) * 2 * ((int)p.offset + (p.offset > (int)p.offset)) + 1;
+  return p;
+}
+
+/**
+ * Compile and initialise dual-kawase GLSL 1.20 shaders.
+ * Correctly handles GL_TEXTURE_RECTANGLE pixel coordinates.
+ */
+bool
+glx_init_blur_kawase(session_t *ps) {
+  glx_session_t *g = ps->psglx;
+  dual_kawase_params_t p = generate_dual_kawase_params(ps->o.blur_strength);
+  g->kawase_iterations = p.iterations;
+  g->kawase_offset     = p.offset;
+
+  // Downsample: 1 center + 4 sub-pixel diagonals = 8 samples total
+  // Uses GL_LINEAR hardware interpolation.
+  char frag_down[2048];
+  snprintf(frag_down, sizeof(frag_down),
+    "#version 120\n"
+    "#extension GL_ARB_texture_rectangle : require\n"
+    "uniform sampler2DRect tex_src;\n"
+    "void main() {\n"
+    "  vec2 uv = gl_TexCoord[0].st;\n"
+    "  vec2 off = %d.%02d * vec2(0.5);\n"
+    "  vec4 s = texture2DRect(tex_src, uv) * 4.0;\n"
+    "  s += texture2DRect(tex_src, uv - off.xy);\n"
+    "  s += texture2DRect(tex_src, uv + off.xy);\n"
+    "  s += texture2DRect(tex_src, uv + vec2(off.x, -off.y));\n"
+    "  s += texture2DRect(tex_src, uv - vec2(off.x, -off.y));\n"
+    "  gl_FragColor = s / 8.0;\n"
+    "}\n",
+    (int)p.offset, (int)((p.offset - (int)p.offset) * 100.0f + 0.5f));
+
+  // Upsample: 4 cardinal + 4 weighted diagonals = 12 samples total
+  char frag_up[2048];
+  snprintf(frag_up, sizeof(frag_up),
+    "#version 120\n"
+    "#extension GL_ARB_texture_rectangle : require\n"
+    "uniform sampler2DRect tex_src;\n"
+    "uniform float opacity;\n"
+    "void main() {\n"
+    "  vec2 uv = gl_TexCoord[0].st;\n"
+    "  vec2 off = %d.%02d * vec2(1.0);\n"
+    "  vec4 s;\n"
+    "  s  = texture2DRect(tex_src, uv + vec2(-off.x, 0.0));\n"
+    "  s += texture2DRect(tex_src, uv + vec2(-off.x, off.y) * 0.5) * 2.0;\n"
+    "  s += texture2DRect(tex_src, uv + vec2(0.0, off.y));\n"
+    "  s += texture2DRect(tex_src, uv + vec2(off.x, off.y) * 0.5) * 2.0;\n"
+    "  s += texture2DRect(tex_src, uv + vec2(off.x, 0.0));\n"
+    "  s += texture2DRect(tex_src, uv + vec2(off.x, -off.y) * 0.5) * 2.0;\n"
+    "  s += texture2DRect(tex_src, uv + vec2(0.0, -off.y));\n"
+    "  s += texture2DRect(tex_src, uv + vec2(-off.x, -off.y) * 0.5) * 2.0;\n"
+    "  gl_FragColor = (s / 12.0) * opacity;\n"
+    "}\n",
+    (int)p.offset, (int)((p.offset - (int)p.offset) * 100.0f + 0.5f));
+
+  g->kawase_pass.prog_down = glx_create_program_from_str(NULL, frag_down);
+  g->kawase_pass.prog_up   = glx_create_program_from_str(NULL, frag_up);
+  if (!g->kawase_pass.prog_down || !g->kawase_pass.prog_up) return false;
+
+  g->kawase_pass.unifm_px_norm   = glGetUniformLocation(g->kawase_pass.prog_down, "pixel_norm");
+  g->kawase_pass.unifm_scale_d   = glGetUniformLocation(g->kawase_pass.prog_down, "scale");
+  g->kawase_pass.unifm_px_norm_u = glGetUniformLocation(g->kawase_pass.prog_up,   "pixel_norm");
+  g->kawase_pass.unifm_scale_u   = glGetUniformLocation(g->kawase_pass.prog_up,   "scale");
+  g->kawase_pass.unifm_opacity   = glGetUniformLocation(g->kawase_pass.prog_up,   "opacity");
+
+  // Allocate iters + 1 resources (0 = raw copy, 1..iters = downsampled passes)
+  int n = p.iterations + 1;
+  glGenFramebuffers(n, g->kawase_fbos);
+  glGenTextures(n, g->kawase_textures);
+  memset(g->kawase_tex_w, 0, sizeof(g->kawase_tex_w));
+  memset(g->kawase_tex_h, 0, sizeof(g->kawase_tex_h));
+
+  for (int i = 0; i < n; ++i) {
+    glBindFramebuffer(GL_FRAMEBUFFER, g->kawase_fbos[i]);
+    glBindTexture(GL_TEXTURE_RECTANGLE, g->kawase_textures[i]);
+    glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, g->kawase_textures[i], 0);
+  }
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glBindTexture(GL_TEXTURE_RECTANGLE, 0);
+  return true;
+}
+
+/**
+ * Robust Dual-Kawase render loop.
+ */
+void
+glx_dual_kawase_blur(session_t *ps, int dx, int dy, int width, int height,
+    float z, XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
+  glx_session_t *g = ps->psglx;
+  const int iters = g->kawase_iterations;
+  const int rh    = ps->root_height;
+
+  if (!iters || !g->kawase_pass.prog_down || !g->kawase_pass.prog_up) return;
+
+  const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
+  const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
+
+  glDisable(GL_STENCIL_TEST);
+  glDisable(GL_SCISSOR_TEST);
+
+  // Resizing textures dynamically to avoid "miniature" bug
+  int pass_w[MAX_BLUR_PASS + 1];
+  int pass_h[MAX_BLUR_PASS + 1];
+
+  int scale = 1;
+  for (int i = 0; i <= iters; ++i) {
+    int tw = (width  + scale - 1) / scale;
+    int th = (height + scale - 1) / scale;
+    if (tw < 1) tw = 1; if (th < 1) th = 1;
+    
+    pass_w[i] = tw;
+    pass_h[i] = th;
+
+    if (tw > g->kawase_tex_w[i] || th > g->kawase_tex_h[i]) {
+      g->kawase_tex_w[i] = tw; g->kawase_tex_h[i] = th;
+      glBindTexture(GL_TEXTURE_RECTANGLE, g->kawase_textures[i]);
+      glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA8, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    }
+    scale <<= 1;
+  }
+
+  // Pass 0: Copy screen to tex[0]
+  // We MUST copy from the current read buffer (the screen), so we don't bind an FBO yet.
+  glBindTexture(GL_TEXTURE_RECTANGLE, g->kawase_textures[0]);
+  glCopyTexSubImage2D(GL_TEXTURE_RECTANGLE, 0, 0, 0, dx, rh - dy - height, width, height);
+  
+  // Now we can use the FBOs for drawing
+  glBindFramebuffer(GL_FRAMEBUFFER, g->kawase_fbos[0]);
+  glEnable(GL_TEXTURE_RECTANGLE);
+
+  // Downsampling passes (tex[i-1] -> fbo[i])
+  glUseProgram(g->kawase_pass.prog_down);
+  for (int i = 1; i <= iters; ++i) {
+    int sw = pass_w[i-1], sh = pass_h[i-1];
+    int dw = pass_w[i],   dh = pass_h[i];
+    glBindFramebuffer(GL_FRAMEBUFFER, g->kawase_fbos[i]);
+    // WARNING: DO NOT change glViewport here, because the global Projection Matrix is Ortho 0..root_width.
+    // If we change Viewport to 0..dw, then vertex dw gets plotted to NDC (dw/root_width), and Viewport scales it
+    // again by dw, rendering a fraction of a pixel! Keeping Viewport at root_width allows 1:1 mapping of vertex pixels.
+    glBindTexture(GL_TEXTURE_RECTANGLE, g->kawase_textures[i-1]);
+    glBegin(GL_QUADS);
+      glTexCoord2f(0,   0); glVertex3f(0,  0,  z);
+      glTexCoord2f(sw,  0); glVertex3f(dw, 0,  z);
+      glTexCoord2f(sw, sh); glVertex3f(dw, dh, z);
+      glTexCoord2f(0,  sh); glVertex3f(0,  dh, z);
+    glEnd();
+  }
+
+  // Upsampling passes (tex[i] -> fbo[i-1] or Screen)
+  glUseProgram(g->kawase_pass.prog_up);
+  for (int i = iters; i >= 1; --i) {
+    int sw = pass_w[i], sh = pass_h[i];
+    glBindTexture(GL_TEXTURE_RECTANGLE, g->kawase_textures[i]);
+    if (i > 1) {
+      int dw = pass_w[i-1], dh = pass_h[i-1];
+      glBindFramebuffer(GL_FRAMEBUFFER, g->kawase_fbos[i-1]);
+      glUniform1f(g->kawase_pass.unifm_opacity, 1.0f);
+      glBegin(GL_QUADS);
+        glTexCoord2f(0,   0); glVertex3f(0,  0,  z);
+        glTexCoord2f(sw,  0); glVertex3f(dw, 0,  z);
+        glTexCoord2f(sw, sh); glVertex3f(dw, dh, z);
+        glTexCoord2f(0,  sh); glVertex3f(0,  dh, z);
+      glEnd();
+    } else {
+      // Last pass to Screen
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      glUniform1f(g->kawase_pass.unifm_opacity, 1.0f);
+      
+      if (have_scissors) glEnable(GL_SCISSOR_TEST);
+      if (have_stencil) glEnable(GL_STENCIL_TEST);
+
+      {
+        P_PAINTREG_START();
+        {
+          // `tex_scr` contains a copy of the screen at `dx, dy` sized `width x height`.
+          // `sw` and `sh` represent the resolution of the final upsampled texture `g->kawase_textures[1]`.
+          // We must map `crect` (a sub-rectangle on screen) to the bounding box [0..sw] x [0..sh].
+          
+          const GLfloat s0 = (crect.x - dx) * ((float)sw / width);
+          const GLfloat s1 = (crect.x + crect.width - dx) * ((float)sw / width);
+          
+          // OpenGL Y coordinates are bottom-up. 
+          // dy is the Y offset from the top.
+          // crect.y is also from the top.
+          // In the texture, V=0 is bottom, V=sh is top.
+          const GLfloat t1 = sh - (crect.y - dy) * ((float)sh / height);                 // Top V
+          const GLfloat t0 = sh - ((crect.y + crect.height) - dy) * ((float)sh / height); // Bottom V
+
+          GLfloat glx_x = crect.x;
+          GLfloat glx_y_top = rh - crect.y;
+          GLfloat glx_x_end = glx_x + crect.width;
+          GLfloat glx_y_bottom = glx_y_top - crect.height;
+
+          // Note: glVertex3f takes (X, Y, Z). glx_y_top > glx_y_bottom.
+          // t1 corresponds to glx_y_top. t0 corresponds to glx_y_bottom.
+          glTexCoord2f(s0, t1); glVertex3f(glx_x,     glx_y_top,    z);
+          glTexCoord2f(s1, t1); glVertex3f(glx_x_end, glx_y_top,    z);
+          glTexCoord2f(s1, t0); glVertex3f(glx_x_end, glx_y_bottom, z);
+          glTexCoord2f(s0, t0); glVertex3f(glx_x,     glx_y_bottom, z);
+        }
+        P_PAINTREG_END();
+      }
+      
+      if (have_scissors) glDisable(GL_SCISSOR_TEST);
+      if (have_stencil) glDisable(GL_STENCIL_TEST);
+    }
+  }
+  glUseProgram(0); glDisable(GL_TEXTURE_RECTANGLE); glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  
+  // Restore state properly at the end
+  if (have_scissors) glEnable(GL_SCISSOR_TEST);
+  if (have_stencil) glEnable(GL_STENCIL_TEST);
+}
+
+void
+glx_destroy_blur_kawase(session_t *ps) {
+  glx_session_t *g = ps->psglx;
+  if (!g) return;
+  if (g->kawase_pass.prog_down) glDeleteProgram(g->kawase_pass.prog_down);
+  if (g->kawase_pass.prog_up)   glDeleteProgram(g->kawase_pass.prog_up);
+  glDeleteFramebuffers(MAX_BLUR_PASS + 1, g->kawase_fbos);
+  glDeleteTextures(MAX_BLUR_PASS + 1, g->kawase_textures);
+  memset(&g->kawase_pass, 0, sizeof(g->kawase_pass));
+  g->kawase_iterations = 0;
+}
+#endif
+
 bool
 glx_greyscale_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     glx_texture_t *ptex, XserverRegion reg_tgt, const reg_data_t *pcache_reg, glx_greyscale_cache_t *gsc) {
