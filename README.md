@@ -75,7 +75,7 @@ Additional optimizations:
 
 ### Other Notes
 
-- Buffer deallocation (`glDeleteFramebuffers`, `glDeleteTextures`, `glDeleteProgram`) in `glx_destroy_blur_kawase` is strict and executed on every configuration switch → No memory leaks detected
+- Buffer deallocation (`glDeleteFramebuffers`, `glDeleteTextures`, `glDeleteProgram`) in `glx_destroy_blur_kawase` is strict and executed on every configuration switch → No memory leaks
 - All logic relies on:
   - Integer arithmetic
   - Precomputed binary-sized registers (`scale <<= 1`)
