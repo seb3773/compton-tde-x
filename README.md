@@ -54,7 +54,7 @@ Dual-Kawase is particularly well suited for compositors because it offers:
 
 ### Fade Performance (Window/Menu Appear / Disappear)
 
-Blur invocation is now conditionally controlled by `!(w->fade && w->opacity != w->opacity_tgt)`
+Blur invocation is conditionally controlled by `!(w->fade && w->opacity != w->opacity_tgt)`
 
 This condition is the most reliable way to detect whether the compositor is currently animating a window.
 As a result, no blur is computed during fade animations, saving a large amount of GPU resources, and the visual blur effect is still correctly applied once the fade-in completes.
