@@ -32,10 +32,7 @@ It has been decoupled from the core TDE build system to ensure portability acros
     *   *Fix*: Reordered the logic to ensure the string is only freed *after* it has been used. This improves stability, especially with complex configurations.
 
 
-# Version 4.0 – Performance & Reliability Audit
-
-A systematic audit of `compton.c`, `common.h`, and `compton.h` was carried out to maximize CPU/RAM performance, reduce binary size, and eliminate all identified undefined behaviour, crash risks, and resource leaks.
-All changes were verified with a full GCC build (`cmake --build`) after each fix.
+# Version 4.0 – Performance & Reliability
 
 ## Reliability Fixes
 
