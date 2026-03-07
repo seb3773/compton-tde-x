@@ -9,7 +9,7 @@ It has been decoupled from the core TDE build system to ensure portability acros
 *   **Portability**: Automatically detects the version of `libconfig` (legacy vs modern) and adapts the source code accordingly.
 *   **Size Optimization**: 
     - Hardcoded aggressive optimization flags (`-O2`, `-flto`, `-fvisibility=hidden`, etc.) to minimize binary size.
-    - Stripped section headers (requires `sstrip` or standard `strip`) to achieve a binary size of **~175KB** (vs ~250KB stock).
+    - Stripped section headers (requires `sstrip` or standard `strip`) to achieve a binary size of **~200KB** (vs ~250KB stock).
 *   **Silent Build**: Optional `-DWITH_SILENT_BUILD=ON` flag to remove all console logging strings, saving ~20KB.
 *   **Code Optimization**:
     - **Region Cache**: Implemented a stack-based cache for `XFixesCreateRegion`, aligned to 64-byte cache lines to reduce X server round-trips.
