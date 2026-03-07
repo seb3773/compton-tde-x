@@ -3,7 +3,7 @@
 # Configuration
 PACKAGE_NAME="compton-tde"
 PACKAGE_VERSION="X"          # Version in package filename
-DEB_VERSION="3.0"            # Version in control file (must start with digit)
+DEB_VERSION="4.0"            # Version in control file (must start with digit)
 ARCH=$(dpkg --print-architecture)
 MAINTAINER="seb3773 <seb3773@github.com>"
 DESCRIPTION="Optimized compton compositor for Trinity Desktop"
