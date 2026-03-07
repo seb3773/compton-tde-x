@@ -32,7 +32,7 @@ It has been decoupled from the core TDE build system to ensure portability acros
     *   *Fix*: Reordered the logic to ensure the string is only freed *after* it has been used. This improves stability, especially with complex configurations.
 
 
-# Version 3.0 – Enhanced Window Condition Matching
+# Version 3.0 – Enhanced Window Condition Matching and Native Software Cursor for Mixed-DPI Supersampling
 
 ## PCRE2 Match Data Fix (`c2.c`)
 
