@@ -168,33 +168,7 @@ add_executable(compton-tde ${compton_SRCS})
 target_link_libraries(compton-tde ${compton_LIBRARIES})
 
 # Linker Flags
-# Try to use gold linker for better size optimization
-execute_process(
-    COMMAND ${CMAKE_C_COMPILER} -fuse-ld=gold -Wl,--version
-    ERROR_QUIET OUTPUT_QUIET
-    RESULT_VARIABLE GOLD_AVAILABLE
-)
-
-if(GOLD_AVAILABLE EQUAL 0)
-    message(STATUS "Using gold linker for better optimization")
-    set(OPT_LDFLAGS "-Wl,--relax -Wl,-z,norelro -flto=2 -fuse-ld=gold -Wl,--gc-sections,--build-id=none,--as-needed,--strip-all,-O1,--icf=all,--compress-debug-sections=zlib -s")
-else()
-    message(STATUS "Gold linker not available, using standard ld with optimizations")
-    # Try lld if available
-    execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -fuse-ld=lld -Wl,--version
-        ERROR_QUIET OUTPUT_QUIET
-        RESULT_VARIABLE LLD_AVAILABLE
-    )
-    if(LLD_AVAILABLE EQUAL 0)
-        message(STATUS "Using lld linker")
-        set(OPT_LDFLAGS "-Wl,--relax -Wl,-z,norelro -flto=2 -fuse-ld=lld -Wl,--gc-sections,--build-id=none,--as-needed,--strip-all -s")
-    else()
-        # Standard ld with best optimizations
-        set(OPT_LDFLAGS "-Wl,--relax -Wl,-z,norelro -flto=2 -Wl,--gc-sections,--build-id=none,--as-needed,--strip-all -Wl,-O1 -s")
-    endif()
-endif()
-
+set(OPT_LDFLAGS "-Wl,--relax -Wl,-z,norelro -flto=2 -fuse-ld=gold -Wl,--gc-sections,--build-id=none,--as-needed,--strip-all,-O1,--icf=all,--compress-debug-sections=zlib -s")
 set_target_properties(compton-tde PROPERTIES LINK_FLAGS "${OPT_LDFLAGS}")
 
 install(TARGETS compton-tde DESTINATION bin)

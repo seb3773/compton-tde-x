@@ -18,8 +18,7 @@
 /**
  * Get a textual representation of an OpenGL error.
  */
-static inline const char *
-glx_dump_err_str(GLenum err) {
+static inline const char *glx_dump_err_str(GLenum err) {
   switch (err) {
     CASESTRRET(GL_NO_ERROR);
     CASESTRRET(GL_INVALID_ENUM);
@@ -39,9 +38,9 @@ glx_dump_err_str(GLenum err) {
  *
  * http://blog.nobel-joergensen.com/2013/01/29/debugging-opengl-using-glgeterror/
  */
-static inline void
-glx_check_err_(session_t *ps, const char *func, int line) {
-  if (!ps->psglx->context) return;
+static inline void glx_check_err_(session_t *ps, const char *func, int line) {
+  if (!ps->psglx->context)
+    return;
 
   GLenum err = GL_NO_ERROR;
 
@@ -51,8 +50,7 @@ glx_check_err_(session_t *ps, const char *func, int line) {
     const char *errtext = glx_dump_err_str(err);
     if (errtext) {
       printf_dbg("%s\n", errtext);
-    }
-    else {
+    } else {
       printf_dbg("%d\n", err);
     }
   }
@@ -60,14 +58,13 @@ glx_check_err_(session_t *ps, const char *func, int line) {
 
 #define glx_check_err(ps) glx_check_err_(ps, __func__, __LINE__)
 #else
-#define glx_check_err(ps) ((void) 0)
+#define glx_check_err(ps) ((void)0)
 #endif
 
 /**
  * Check if a word is in string.
  */
-static inline bool
-wd_is_in_str(const char *haystick, const char *needle) {
+static inline bool wd_is_in_str(const char *haystick, const char *needle) {
   if (!haystick)
     return false;
 
@@ -76,8 +73,8 @@ wd_is_in_str(const char *haystick, const char *needle) {
   const char *pos = haystick - 1;
   while ((pos = strstr(pos + 1, needle))) {
     // Continue if it isn't a word boundary
-    if (((pos - haystick) && !isspace(*(pos - 1)))
-        || (strlen(pos) > strlen(needle) && !isspace(pos[strlen(needle)])))
+    if (((pos - haystick) && !isspace(*(pos - 1))) ||
+        (strlen(pos) > strlen(needle) && !isspace(pos[strlen(needle)])))
       continue;
     return true;
   }
@@ -88,16 +85,13 @@ wd_is_in_str(const char *haystick, const char *needle) {
 /**
  * Extension type for glx_has_ext.
  */
-typedef enum {
-  EXT_TYPE_GLX,
-  EXT_TYPE_GL
-} ext_type_t;
+typedef enum { EXT_TYPE_GLX, EXT_TYPE_GL } ext_type_t;
 
 /**
  * Check if a GLX or GL extension exists (cached).
  */
-static inline bool
-glx_has_ext(session_t *ps, ext_type_t type, const char *ext) {
+static inline bool glx_has_ext(session_t *ps, ext_type_t type,
+                               const char *ext) {
   static const char *cached_glx_exts = NULL;
   static const char *cached_gl_exts = NULL;
 
@@ -110,21 +104,21 @@ glx_has_ext(session_t *ps, ext_type_t type, const char *ext) {
     exts = cached_glx_exts;
   } else {
     if (!cached_gl_exts) {
-      cached_gl_exts = (const char *) glGetString(GL_EXTENSIONS);
+      cached_gl_exts = (const char *)glGetString(GL_EXTENSIONS);
     }
     exts = cached_gl_exts;
   }
 
   if (!exts) {
     printf_errf("(): Failed to get %s extension list.",
-        type == EXT_TYPE_GLX ? "GLX" : "GL");
+                type == EXT_TYPE_GLX ? "GLX" : "GL");
     return false;
   }
 
   bool found = wd_is_in_str(exts, ext);
   if (!found)
     printf_errf("(): Missing %s extension %s.",
-        type == EXT_TYPE_GLX ? "GLX" : "GL", ext);
+                type == EXT_TYPE_GLX ? "GLX" : "GL", ext);
 
   return found;
 }
@@ -132,38 +126,37 @@ glx_has_ext(session_t *ps, ext_type_t type, const char *ext) {
 /**
  * Check if a GLX extension exists (wrapper).
  */
-static inline bool
-glx_hasglxext(session_t *ps, const char *ext) {
+static inline bool glx_hasglxext(session_t *ps, const char *ext) {
   return glx_has_ext(ps, EXT_TYPE_GLX, ext);
 }
 
 /**
  * Check if a GL extension exists (wrapper).
  */
-static inline bool
-glx_hasglext(session_t *ps, const char *ext) {
+static inline bool glx_hasglext(session_t *ps, const char *ext) {
   return glx_has_ext(ps, EXT_TYPE_GL, ext);
 }
 
-static inline XVisualInfo *
-get_visualinfo_from_visual(session_t *ps, Visual *visual) {
-  XVisualInfo vreq = { .visualid = XVisualIDFromVisual(visual) };
+static inline XVisualInfo *get_visualinfo_from_visual(session_t *ps,
+                                                      Visual *visual) {
+  XVisualInfo vreq = {.visualid = XVisualIDFromVisual(visual)};
   int nitems = 0;
 
   return XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
 }
 
-static bool
-glx_update_fbconfig(session_t *ps);
+static bool glx_update_fbconfig(session_t *ps);
 
-static int
-glx_cmp_fbconfig(session_t *ps,
-    const glx_fbconfig_t *pfbc_a, const glx_fbconfig_t *pfbc_b);
+static int glx_cmp_fbconfig(session_t *ps, const glx_fbconfig_t *pfbc_a,
+                            const glx_fbconfig_t *pfbc_b);
 
-static void
-glx_render_color(session_t *ps, int dx, int dy, int width, int height, int z,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg);
+static void glx_render_color(session_t *ps, int dx, int dy, int width,
+                             int height, int z, XserverRegion reg_tgt,
+                             const reg_data_t *pcache_reg);
 
-static void
-glx_render_dots(session_t *ps, int dx, int dy, int width, int height, int z,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg);
+static void glx_render_dots(session_t *ps, int dx, int dy, int width,
+                            int height, int z, XserverRegion reg_tgt,
+                            const reg_data_t *pcache_reg);
+
+void glx_update_sw_cursor(session_t *ps);
+void glx_render_sw_cursor(session_t *ps);

@@ -38,19 +38,14 @@
 // #define MONITOR_REPAINT  1
 // #define DEBUG_FADE       1
 
-// Whether to enable PCRE2 regular expression support in blacklists, enabled by default
-// #define CONFIG_REGEX_PCRE2 1
-// Whether to enable JIT support of libpcre2. This may cause problems on PaX kernels.
-// #define CONFIG_REGEX_PCRE2_JIT 1
-// Whether to enable parsing of configuration files using libconfig.
-// #define CONFIG_LIBCONFIG 1
-// Whether we are using a legacy version of libconfig (1.3.x).
-// #define CONFIG_LIBCONFIG_LEGACY 1
-// Whether to enable DRM VSync support
-// #define CONFIG_VSYNC_DRM 1
-// Whether to enable OpenGL support
-// #define CONFIG_VSYNC_OPENGL 1
-// Whether to enable GLX GLSL support
+// Whether to enable PCRE2 regular expression support in blacklists, enabled by
+// default #define CONFIG_REGEX_PCRE2 1 Whether to enable JIT support of
+// libpcre2. This may cause problems on PaX kernels. #define
+// CONFIG_REGEX_PCRE2_JIT 1 Whether to enable parsing of configuration files
+// using libconfig. #define CONFIG_LIBCONFIG 1 Whether we are using a legacy
+// version of libconfig (1.3.x). #define CONFIG_LIBCONFIG_LEGACY 1 Whether to
+// enable DRM VSync support #define CONFIG_VSYNC_DRM 1 Whether to enable OpenGL
+// support #define CONFIG_VSYNC_OPENGL 1 Whether to enable GLX GLSL support
 // #define CONFIG_VSYNC_OPENGL_GLSL 1
 // Whether to enable GLX FBO support
 // #define CONFIG_VSYNC_OPENGL_FBO 1
@@ -74,7 +69,8 @@
 #error Cannot enable c2 debugging without c2 support.
 #endif
 
-#if (!defined(CONFIG_XSYNC) || !defined(CONFIG_VSYNC_OPENGL)) && defined(CONFIG_GLX_SYNC)
+#if (!defined(CONFIG_XSYNC) || !defined(CONFIG_VSYNC_OPENGL)) &&               \
+    defined(CONFIG_GLX_SYNC)
 #error Cannot enable GL sync without X Sync / OpenGL support.
 #endif
 
@@ -91,25 +87,25 @@
 // For some special functions
 #define _GNU_SOURCE
 
+#include <assert.h>
+#include <ctype.h>
+#include <inttypes.h>
+#include <poll.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <inttypes.h>
-#include <poll.h>
-#include <assert.h>
-#include <time.h>
-#include <ctype.h>
 #include <sys/time.h>
+#include <time.h>
 
+#include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <X11/Xatom.h>
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xdamage.h>
+#include <X11/extensions/Xdbe.h>
 #include <X11/extensions/Xrender.h>
 #include <X11/extensions/shape.h>
-#include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
 #include <X11/extensions/sync.h>
 #endif
@@ -130,8 +126,8 @@
 
 // libconfig
 #ifdef CONFIG_LIBCONFIG
-#include <libgen.h>
 #include <libconfig.h>
+#include <libgen.h>
 #endif
 
 // libdbus
@@ -162,14 +158,14 @@
 
 // === Macros ===
 
-#define MSTR_(s)        #s
-#define MSTR(s)         MSTR_(s)
+#define MSTR_(s) #s
+#define MSTR(s) MSTR_(s)
 
 /// @brief Wrapper for gcc branch prediction builtin, for likely branch.
-#define likely(x)    __builtin_expect(!!(x), 1)
+#define likely(x) __builtin_expect(!!(x), 1)
 
 /// @brief Wrapper for gcc branch prediction builtin, for unlikely branch.
-#define unlikely(x)  __builtin_expect(!!(x), 0)
+#define unlikely(x) __builtin_expect(!!(x), 0)
 
 /// @brief Wrapper for gcc hot attribute.
 #define HOT __attribute__((hot))
@@ -178,30 +174,30 @@
 #define COLD __attribute__((cold))
 
 /// Free a pointer and set it to NULL.
-#define FREE(ptr) \
-  do { \
-    if (ptr) { \
-      free(ptr); \
-      ptr = NULL; \
-    } \
+#define FREE(ptr)                                                              \
+  do {                                                                         \
+    if (ptr) {                                                                 \
+      free(ptr);                                                               \
+      ptr = NULL;                                                              \
+    }                                                                          \
   } while (0)
 
 /// Free an X resource and set it to 0.
-#define FREE_XRES(ps, res, func) \
-  do { \
-    if (res) { \
-      func((ps)->dpy, (res)); \
-      res = 0; \
-    } \
+#define FREE_XRES(ps, res, func)                                               \
+  do {                                                                         \
+    if (res) {                                                                 \
+      func((ps)->dpy, (res));                                                  \
+      res = 0;                                                                 \
+    }                                                                          \
   } while (0)
 
 /// Free a generic X resource (XFree) and set it to NULL.
-#define XFREE(ptr) \
-  do { \
-    if (ptr) { \
-      XFree((void *) (ptr)); \
-      ptr = NULL; \
-    } \
+#define XFREE(ptr)                                                             \
+  do {                                                                         \
+    if (ptr) {                                                                 \
+      XFree((void *)(ptr));                                                    \
+      ptr = NULL;                                                              \
+    }                                                                          \
   } while (0)
 
 /// Print out an error message.
@@ -211,37 +207,39 @@
 #define printf_errf(format, ...) ((void)0)
 #define printf_errfq(code, format, ...) exit(code)
 #else
-#define printf_err(format, ...) \
-  fprintf(stderr, format "\n", ## __VA_ARGS__)
+#define printf_err(format, ...) fprintf(stderr, format "\n", ##__VA_ARGS__)
 
 /// Print out an error message with function name.
-#define printf_errf(format, ...) \
-  printf_err("%s" format,  __func__, ## __VA_ARGS__)
+#define printf_errf(format, ...)                                               \
+  printf_err("%s" format, __func__, ##__VA_ARGS__)
 
 /// Print out an error message with function name, and quit with a
 /// specific exit code.
-#define printf_errfq(code, format, ...) { \
-  printf_err("%s" format,  __func__, ## __VA_ARGS__); \
-  exit(code); \
-}
+#define printf_errfq(code, format, ...)                                        \
+  {                                                                            \
+    printf_err("%s" format, __func__, ##__VA_ARGS__);                          \
+    exit(code);                                                                \
+  }
 #endif
 
 /// Print out a debug message.
 #ifdef DEBUG
-#define printf_dbg(format, ...) \
-  printf(format, ## __VA_ARGS__); \
+#define printf_dbg(format, ...)                                                \
+  printf(format, ##__VA_ARGS__);                                               \
   fflush(stdout)
 #else
 #define printf_dbg(format, ...) ((void)0)
 #endif
 
 /// Print out a debug message with function name.
-#define printf_dbgf(format, ...) \
-  printf_dbg("%s" format, __func__, ## __VA_ARGS__)
+#define printf_dbgf(format, ...)                                               \
+  printf_dbg("%s" format, __func__, ##__VA_ARGS__)
 
 // Use #s here to prevent macro expansion
 /// Macro used for shortening some debugging code.
-#define CASESTRRET(s)   case s: return #s
+#define CASESTRRET(s)                                                          \
+  case s:                                                                      \
+    return #s
 
 // X resource checker
 #ifdef DEBUG_XRC
@@ -257,7 +255,7 @@
 #define BUF_LEN 80
 
 #define ROUNDED_PERCENT 0.05
-#define ROUNDED_PIXELS  10
+#define ROUNDED_PIXELS 10
 
 #define OPAQUE 0xffffffff
 #define REGISTER_PROP "_NET_WM_CM_S"
@@ -274,9 +272,9 @@
 #define US_PER_SEC 1000000L
 #define MS_PER_SEC 1000
 
-#define XRFILTER_CONVOLUTION  "convolution"
-#define XRFILTER_GAUSSIAN     "gaussian"
-#define XRFILTER_BINOMIAL     "binomial"
+#define XRFILTER_CONVOLUTION "convolution"
+#define XRFILTER_GAUSSIAN "gaussian"
+#define XRFILTER_BINOMIAL "binomial"
 
 /// @brief Maximum OpenGL FBConfig depth.
 #define OPENGL_MAX_DEPTH 32
@@ -289,26 +287,26 @@
 
 /// @brief Blur methods supported by the GLX backend.
 typedef enum {
-  BLUR_METHOD_NONE       = 0,
-  BLUR_METHOD_KERNEL,        // convolution (box / gaussian / custom)
-  BLUR_METHOD_DUAL_KAWASE    // dual-filter kawase (picom-derived)
+  BLUR_METHOD_NONE = 0,
+  BLUR_METHOD_KERNEL,     // convolution (box / gaussian / custom)
+  BLUR_METHOD_DUAL_KAWASE // dual-filter kawase (picom-derived)
 } blur_method_t;
 
 /// @brief Precomputed parameters for a given dual-kawase strength level.
 typedef struct {
-  int   iterations; // number of down+up passes (1..5)
-  float offset;     // half-pixel sample offset baked into shader
-  int   expand;     // border expansion to avoid edge artifacts
+  int iterations; // number of down+up passes (1..5)
+  float offset;   // half-pixel sample offset baked into shader
+  int expand;     // border expansion to avoid edge artifacts
 } dual_kawase_params_t;
 
 // Window flags
 
 // Window size is changed
-#define WFLAG_SIZE_CHANGE   0x0001
+#define WFLAG_SIZE_CHANGE 0x0001
 // Window size/position is changed
-#define WFLAG_POS_CHANGE    0x0002
+#define WFLAG_POS_CHANGE 0x0002
 // Window opacity / dim state changed
-#define WFLAG_OPCT_CHANGE   0x0004
+#define WFLAG_OPCT_CHANGE 0x0004
 
 // === Types ===
 
@@ -336,8 +334,8 @@ typedef enum {
 
 /// Enumeration type to represent switches.
 typedef enum {
-  OFF,    // false
-  ON,     // true
+  OFF, // false
+  ON,  // true
   UNSET
 } switch_t;
 
@@ -350,17 +348,13 @@ typedef struct {
 } geometry_t;
 
 /// Enumeration type of window painting mode.
-typedef enum {
-  WMODE_TRANS,
-  WMODE_SOLID,
-  WMODE_ARGB
-} winmode_t;
+typedef enum { WMODE_TRANS, WMODE_SOLID, WMODE_ARGB } winmode_t;
 
 /// Structure representing needed window updates.
 typedef struct {
-  bool shadow       : 1;
-  bool fade         : 1;
-  bool focus        : 1;
+  bool shadow : 1;
+  bool fade : 1;
+  bool focus : 1;
   bool invert_color : 1;
 } win_upd_t;
 
@@ -431,28 +425,37 @@ typedef struct _glx_texture glx_texture_t;
 
 #ifdef CONFIG_VSYNC_OPENGL
 #ifdef DEBUG_GLX_DEBUG_CONTEXT
-typedef GLXContext (*f_glXCreateContextAttribsARB) (Display *dpy,
-    GLXFBConfig config, GLXContext share_context, Bool direct,
-    const int *attrib_list);
-typedef void (*GLDEBUGPROC) (GLenum source, GLenum type,
-    GLuint id, GLenum severity, GLsizei length, const GLchar* message,
-    GLvoid* userParam);
-typedef void (*f_DebugMessageCallback) (GLDEBUGPROC, void *userParam);
+typedef GLXContext (*f_glXCreateContextAttribsARB)(Display *dpy,
+                                                   GLXFBConfig config,
+                                                   GLXContext share_context,
+                                                   Bool direct,
+                                                   const int *attrib_list);
+typedef void (*GLDEBUGPROC)(GLenum source, GLenum type, GLuint id,
+                            GLenum severity, GLsizei length,
+                            const GLchar *message, GLvoid *userParam);
+typedef void (*f_DebugMessageCallback)(GLDEBUGPROC, void *userParam);
 #endif
 
-typedef int (*f_WaitVideoSync) (int, int, unsigned *);
-typedef int (*f_GetVideoSync) (unsigned *);
+typedef int (*f_WaitVideoSync)(int, int, unsigned *);
+typedef int (*f_GetVideoSync)(unsigned *);
 
-typedef Bool (*f_GetSyncValuesOML) (Display* dpy, GLXDrawable drawable, int64_t* ust, int64_t* msc, int64_t* sbc);
-typedef Bool (*f_WaitForMscOML) (Display* dpy, GLXDrawable drawable, int64_t target_msc, int64_t divisor, int64_t remainder, int64_t* ust, int64_t* msc, int64_t* sbc);
+typedef Bool (*f_GetSyncValuesOML)(Display *dpy, GLXDrawable drawable,
+                                   int64_t *ust, int64_t *msc, int64_t *sbc);
+typedef Bool (*f_WaitForMscOML)(Display *dpy, GLXDrawable drawable,
+                                int64_t target_msc, int64_t divisor,
+                                int64_t remainder, int64_t *ust, int64_t *msc,
+                                int64_t *sbc);
 
-typedef int (*f_SwapIntervalSGI) (int interval);
-typedef int (*f_SwapIntervalMESA) (unsigned int interval);
+typedef int (*f_SwapIntervalSGI)(int interval);
+typedef int (*f_SwapIntervalMESA)(unsigned int interval);
 
-typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int buffer, const int *attrib_list);
-typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
+typedef void (*f_BindTexImageEXT)(Display *display, GLXDrawable drawable,
+                                  int buffer, const int *attrib_list);
+typedef void (*f_ReleaseTexImageEXT)(Display *display, GLXDrawable drawable,
+                                     int buffer);
 
-typedef void (*f_CopySubBuffer) (Display *dpy, GLXDrawable drawable, int x, int y, int width, int height);
+typedef void (*f_CopySubBuffer)(Display *dpy, GLXDrawable drawable, int x,
+                                int y, int width, int height);
 
 #ifdef CONFIG_GLX_SYNC
 // Looks like duplicate typedef of the same type is safe?
@@ -486,20 +489,19 @@ typedef struct __GLsync *GLsync;
 #define GL_WAIT_FAILED 0x911D
 #endif
 
-typedef GLsync (*f_FenceSync) (GLenum condition, GLbitfield flags);
-typedef GLboolean (*f_IsSync) (GLsync sync);
-typedef void (*f_DeleteSync) (GLsync sync);
-typedef GLenum (*f_ClientWaitSync) (GLsync sync, GLbitfield flags,
-    GLuint64 timeout);
-typedef void (*f_WaitSync) (GLsync sync, GLbitfield flags,
-    GLuint64 timeout);
-typedef GLsync (*f_ImportSyncEXT) (GLenum external_sync_type,
-    GLintptr external_sync, GLbitfield flags);
+typedef GLsync (*f_FenceSync)(GLenum condition, GLbitfield flags);
+typedef GLboolean (*f_IsSync)(GLsync sync);
+typedef void (*f_DeleteSync)(GLsync sync);
+typedef GLenum (*f_ClientWaitSync)(GLsync sync, GLbitfield flags,
+                                   GLuint64 timeout);
+typedef void (*f_WaitSync)(GLsync sync, GLbitfield flags, GLuint64 timeout);
+typedef GLsync (*f_ImportSyncEXT)(GLenum external_sync_type,
+                                  GLintptr external_sync, GLbitfield flags);
 #endif
 
 #ifdef DEBUG_GLX_MARK
-typedef void (*f_StringMarkerGREMEDY) (GLsizei len, const void *string);
-typedef void (*f_FrameTerminatorGREMEDY) (void);
+typedef void (*f_StringMarkerGREMEDY)(GLsizei len, const void *string);
+typedef void (*f_FrameTerminatorGREMEDY)(void);
 #endif
 
 /// @brief Wrapper of a GLX FBConfig.
@@ -551,11 +553,11 @@ typedef struct {
 typedef struct {
   GLuint prog_down;      // downsample GLSL program
   GLuint prog_up;        // upsample GLSL program
-  GLint  unifm_px_norm;  // location of pixel_norm uniform (down pass)
-  GLint  unifm_scale_d;  // location of scale uniform (down pass)
-  GLint  unifm_px_norm_u;// location of pixel_norm uniform (up pass)
-  GLint  unifm_scale_u;  // location of scale uniform (up pass)
-  GLint  unifm_opacity;  // location of opacity uniform (up pass)
+  GLint unifm_px_norm;   // location of pixel_norm uniform (down pass)
+  GLint unifm_scale_d;   // location of scale uniform (down pass)
+  GLint unifm_px_norm_u; // location of pixel_norm uniform (up pass)
+  GLint unifm_scale_u;   // location of scale uniform (up pass)
+  GLint unifm_opacity;   // location of opacity uniform (up pass)
 } glx_kawase_pass_t;
 
 typedef struct {
@@ -595,12 +597,13 @@ typedef struct {
   GLint unifm_tex;
 } glx_prog_main_t;
 
-#define GLX_PROG_MAIN_INIT { \
-  .prog = 0, \
-  .unifm_opacity = -1, \
-  .unifm_invert_color = -1, \
-  .unifm_tex = -1, \
-}
+#define GLX_PROG_MAIN_INIT                                                     \
+  {                                                                            \
+      .prog = 0,                                                               \
+      .unifm_opacity = -1,                                                     \
+      .unifm_invert_color = -1,                                                \
+      .unifm_tex = -1,                                                         \
+  }
 
 #endif
 #endif
@@ -611,7 +614,7 @@ typedef struct {
   glx_texture_t *ptex;
 } paint_t;
 
-#define PAINT_INIT { .pixmap = None, .pict = None }
+#define PAINT_INIT {.pixmap = None, .pict = None}
 
 typedef struct {
   int size;
@@ -630,7 +633,7 @@ typedef struct {
   int nrects;
 } reg_data_t;
 
-#define REG_DATA_INIT { NULL, 0 }
+#define REG_DATA_INIT {NULL, 0}
 
 struct _timeout_t;
 
@@ -748,6 +751,10 @@ typedef struct _options_t {
   bool clear_shadow;
   /// Geometry of a region in which shadow is not painted on.
   geometry_t shadow_exclude_reg_geom;
+
+  // === Advanced ===
+  /// Draw software cursor in GLX loop
+  bool sw_cursor;
   /// Shadow blacklist. A linked list of conditions.
   c2_lptr_t *shadow_blacklist;
   /// Whether bounding-shaped window should be ignored.
@@ -864,7 +871,7 @@ typedef struct {
   f_GetVideoSync glXGetVideoSyncSGI;
   /// Pointer to glXWaitVideoSyncSGI function.
   f_WaitVideoSync glXWaitVideoSyncSGI;
-   /// Pointer to glXGetSyncValuesOML function.
+  /// Pointer to glXGetSyncValuesOML function.
   f_GetSyncValuesOML glXGetSyncValuesOML;
   /// Pointer to glXWaitForMscOML function.
   f_WaitForMscOML glXWaitForMscOML;
@@ -905,22 +912,24 @@ typedef struct {
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
   // dual-kawase resources
-  glx_kawase_pass_t kawase_pass;               // compiled shaders (shared across iterations)
-  GLuint            kawase_fbos[MAX_BLUR_PASS + 1]; // one FBO per downsample iteration + raw copy
-  GLuint            kawase_textures[MAX_BLUR_PASS + 1]; // one texture per downsample iteration + raw copy
-  int               kawase_tex_w[MAX_BLUR_PASS + 1];    // cached texture widths
-  int               kawase_tex_h[MAX_BLUR_PASS + 1];    // cached texture heights
-  int               kawase_iterations;              // active iteration count
-  float             kawase_offset;                  // sample offset baked at init
-  int               kawase_src_w;                   // last seen source width
-  int               kawase_src_h;                   // last seen source height
+  glx_kawase_pass_t kawase_pass; // compiled shaders (shared across iterations)
+  GLuint kawase_fbos[MAX_BLUR_PASS +
+                     1]; // one FBO per downsample iteration + raw copy
+  GLuint kawase_textures[MAX_BLUR_PASS +
+                         1]; // one texture per downsample iteration + raw copy
+  int kawase_tex_w[MAX_BLUR_PASS + 1]; // cached texture widths
+  int kawase_tex_h[MAX_BLUR_PASS + 1]; // cached texture heights
+  int kawase_iterations;               // active iteration count
+  float kawase_offset;                 // sample offset baked at init
+  int kawase_src_w;                    // last seen source width
+  int kawase_src_h;                    // last seen source height
 #endif
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   glx_greyscale_t greyscale_glsl;
 #endif
 } glx_session_t;
 
-#define CGLX_SESSION_INIT { .context = NULL }
+#define CGLX_SESSION_INIT {.context = NULL}
 
 #endif
 
@@ -1182,6 +1191,17 @@ typedef struct _session_t {
   /// Linked list of additional atoms to track.
   latom_t *track_atom_lst;
 
+  // === Software Cursor (GLX Overlay) ===
+  GLuint cursor_tex;
+  bool cursor_needs_update;
+  int cursor_w;
+  int cursor_h;
+  int cursor_hx;
+  int cursor_hy;
+  int cursor_x;
+  int cursor_y;
+  bool cursor_hidden;
+
 #ifdef CONFIG_DBUS
   // === DBus related ===
   // DBus connection.
@@ -1209,7 +1229,7 @@ typedef struct _win {
   const c2_lptr_t *cache_oparule;
   const c2_lptr_t *cache_pblst;
   const c2_lptr_t *cache_uipblst;
-  void (*fade_callback) (session_t *ps, struct _win *w);
+  void (*fade_callback)(session_t *ps, struct _win *w);
 
   // === XIDs / Longs / Doubles (8 bytes) ===
   Window id;
@@ -1316,27 +1336,25 @@ typedef enum {
   WIN_EVMODE_CLIENT
 } win_evmode_t;
 
-extern const char * const WINTYPES[NUM_WINTYPES];
-extern const char * const VSYNC_STRS[NUM_VSYNC + 1];
-extern const char * const BACKEND_STRS[NUM_BKEND + 1];
+extern const char *const WINTYPES[NUM_WINTYPES];
+extern const char *const VSYNC_STRS[NUM_VSYNC + 1];
+extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 extern session_t *ps_g;
 
 // == Debugging code ==
-static inline void
-print_timestamp(session_t *ps);
+static inline void print_timestamp(session_t *ps);
 
 #ifdef DEBUG_BACKTRACE
 
 #include <execinfo.h>
-#define BACKTRACE_SIZE  25
+#define BACKTRACE_SIZE 25
 
 /**
  * Print current backtrace.
  *
  * Stolen from glibc manual.
  */
-static inline void
-print_backtrace(void) {
+static inline void print_backtrace(void) {
   void *array[BACKTRACE_SIZE];
   size_t size;
   char **strings;
@@ -1345,7 +1363,7 @@ print_backtrace(void) {
   strings = backtrace_symbols(array, size);
 
   for (size_t i = 0; i < size; i++)
-     printf ("%s\n", strings[i]);
+    printf("%s\n", strings[i]);
 
   free(strings);
 }
@@ -1355,9 +1373,9 @@ print_backtrace(void) {
 /**
  * Wrapper of <code>XFixesCreateRegion</code>, for debugging.
  */
-static inline XserverRegion
-XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
-    const char *func, int line) {
+static inline XserverRegion XFixesCreateRegion_(Display *dpy, XRectangle *p,
+                                                int n, const char *func,
+                                                int line) {
   XserverRegion reg = XFixesCreateRegion(dpy, p, n);
   print_timestamp(ps_g);
   printf("%#010lx: XFixesCreateRegion() in %s():%d\n", reg, func, line);
@@ -1369,28 +1387,30 @@ XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
 /**
  * Wrapper of <code>XFixesDestroyRegion</code>, for debugging.
  */
-static inline void
-XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
-    const char *func, int line) {
+static inline void XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
+                                        const char *func, int line) {
   XFixesDestroyRegion(dpy, reg);
   print_timestamp(ps_g);
   printf("%#010lx: XFixesDestroyRegion() in %s():%d\n", reg, func, line);
   fflush(stdout);
 }
 
-#define XFixesCreateRegion(dpy, p, n) XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
-#define XFixesDestroyRegion(dpy, reg) XFixesDestroyRegion_(dpy, reg, __func__, __LINE__)
+#define XFixesCreateRegion(dpy, p, n)                                          \
+  XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
+#define XFixesDestroyRegion(dpy, reg)                                          \
+  XFixesDestroyRegion_(dpy, reg, __func__, __LINE__)
 #endif
 
 #endif
 
 // === Functions ===
+void glx_update_sw_cursor(session_t *ps);
+void glx_render_sw_cursor(session_t *ps);
 
 /**
  * @brief Quit if the passed-in pointer is empty.
  */
-static inline void *
-allocchk_(const char *func_name, void *ptr) {
+static inline void *allocchk_(const char *func_name, void *ptr) {
   if (!ptr) {
     printf_err("%s(): Failed to allocate memory.", func_name);
     exit(1);
@@ -1402,19 +1422,19 @@ allocchk_(const char *func_name, void *ptr) {
 #define allocchk(ptr) allocchk_(__func__, ptr)
 
 /// @brief Wrapper of malloc().
-#define cmalloc(nmemb, type) ((type *) allocchk(malloc((nmemb) * sizeof(type))))
+#define cmalloc(nmemb, type) ((type *)allocchk(malloc((nmemb) * sizeof(type))))
 
 /// @brief Wrapper of calloc().
-#define ccalloc(nmemb, type) ((type *) allocchk(calloc((nmemb), sizeof(type))))
+#define ccalloc(nmemb, type) ((type *)allocchk(calloc((nmemb), sizeof(type))))
 
 /// @brief Wrapper of ealloc().
-#define crealloc(ptr, nmemb, type) ((type *) allocchk(realloc((ptr), (nmemb) * sizeof(type))))
+#define crealloc(ptr, nmemb, type)                                             \
+  ((type *)allocchk(realloc((ptr), (nmemb) * sizeof(type))))
 
 /**
  * Return whether a struct timeval value is empty.
  */
-static inline bool
-timeval_isempty(struct timeval *ptv) {
+static inline bool timeval_isempty(struct timeval *ptv) {
   if (!ptv)
     return false;
 
@@ -1426,8 +1446,7 @@ timeval_isempty(struct timeval *ptv) {
  *
  * @return > 0 if ptv > ms, 0 if ptv == 0, -1 if ptv < ms
  */
-static inline int
-timeval_ms_cmp(struct timeval *ptv, time_ms_t ms) {
+static inline int timeval_ms_cmp(struct timeval *ptv, time_ms_t ms) {
   assert(ptv);
 
   // We use those if statement instead of a - expression because of possible
@@ -1460,10 +1479,8 @@ timeval_ms_cmp(struct timeval *ptv, time_ms_t ms) {
  * storing the result in RESULT.
  * Return 1 if the difference is negative, otherwise 0.
  */
-static inline int
-timeval_subtract(struct timeval *result,
-                 struct timeval *x,
-                 struct timeval *y) {
+static inline int timeval_subtract(struct timeval *result, struct timeval *x,
+                                   struct timeval *y) {
   /* Perform the carry for the later subtraction by updating y. */
   if (x->tv_usec < y->tv_usec) {
     long nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
@@ -1495,10 +1512,8 @@ timeval_subtract(struct timeval *result,
  * storing the result in RESULT.
  * Return 1 if the difference is negative, otherwise 0.
  */
-static inline int
-timespec_subtract(struct timespec *result,
-                 struct timespec *x,
-                 struct timespec *y) {
+static inline int timespec_subtract(struct timespec *result, struct timespec *x,
+                                    struct timespec *y) {
   /* Perform the carry for the later subtraction by updating y. */
   if (x->tv_nsec < y->tv_nsec) {
     long nsec = (y->tv_nsec - x->tv_nsec) / NS_PER_SEC + 1;
@@ -1524,9 +1539,8 @@ timespec_subtract(struct timespec *result,
 /**
  * Get current time in struct timeval.
  */
-static inline struct timeval __attribute__((const))
-get_time_timeval(void) {
-  struct timeval tv = { 0, 0 };
+static inline struct timeval __attribute__((const)) get_time_timeval(void) {
+  struct timeval tv = {0, 0};
 
   gettimeofday(&tv, NULL);
 
@@ -1539,9 +1553,8 @@ get_time_timeval(void) {
  *
  * Note its starting time is unspecified.
  */
-static inline struct timespec __attribute__((const))
-get_time_timespec(void) {
-  struct timespec tm = { 0, 0 };
+static inline struct timespec __attribute__((const)) get_time_timespec(void) {
+  struct timespec tm = {0, 0};
 
   clock_gettime(CLOCK_MONOTONIC, &tm);
 
@@ -1549,17 +1562,16 @@ get_time_timespec(void) {
   return tm;
 }
 
-
 /**
  * Print time passed since program starts execution.
  *
  * Used for debugging.
  */
-static inline void
-print_timestamp(session_t *ps) {
+static inline void print_timestamp(session_t *ps) {
   struct timeval tm, diff;
 
-  if (gettimeofday(&tm, NULL)) return;
+  if (gettimeofday(&tm, NULL))
+    return;
 
   timeval_subtract(&diff, &tm, &ps->time_start);
   printf("[ %5ld.%02ld ] ", diff.tv_sec, diff.tv_usec / 10000);
@@ -1568,8 +1580,7 @@ print_timestamp(session_t *ps) {
 /**
  * Allocate the space and copy a string.
  */
-static inline char *
-mstrcpy(const char *src) {
+static inline char *mstrcpy(const char *src) {
   char *str = cmalloc(strlen(src) + 1, char);
 
   strcpy(str, src);
@@ -1580,8 +1591,7 @@ mstrcpy(const char *src) {
 /**
  * Allocate the space and copy a string.
  */
-static inline char *
-mstrncpy(const char *src, unsigned len) {
+static inline char *mstrncpy(const char *src, unsigned len) {
   char *str = cmalloc(len + 1, char);
 
   strncpy(str, src, len);
@@ -1593,8 +1603,7 @@ mstrncpy(const char *src, unsigned len) {
 /**
  * Allocate the space and join two strings.
  */
-static inline char *
-mstrjoin(const char *src1, const char *src2) {
+static inline char *mstrjoin(const char *src1, const char *src2) {
   char *str = cmalloc(strlen(src1) + strlen(src2) + 1, char);
 
   strcpy(str, src1);
@@ -1606,10 +1615,9 @@ mstrjoin(const char *src1, const char *src2) {
 /**
  * Allocate the space and join two strings;
  */
-static inline char *
-mstrjoin3(const char *src1, const char *src2, const char *src3) {
-  char *str = cmalloc(strlen(src1) + strlen(src2)
-        + strlen(src3) + 1, char);
+static inline char *mstrjoin3(const char *src1, const char *src2,
+                              const char *src3) {
+  char *str = cmalloc(strlen(src1) + strlen(src2) + strlen(src3) + 1, char);
 
   strcpy(str, src1);
   strcat(str, src2);
@@ -1621,10 +1629,9 @@ mstrjoin3(const char *src1, const char *src2, const char *src3) {
 /**
  * Concatenate a string on heap with another string.
  */
-static inline void
-mstrextend(char **psrc1, const char *src2) {
-  *psrc1 = crealloc(*psrc1, (*psrc1 ? strlen(*psrc1): 0) + strlen(src2) + 1,
-      char);
+static inline void mstrextend(char **psrc1, const char *src2) {
+  *psrc1 =
+      crealloc(*psrc1, (*psrc1 ? strlen(*psrc1) : 0) + strlen(src2) + 1, char);
 
   strcat(*psrc1, src2);
 }
@@ -1637,42 +1644,40 @@ mstrextend(char **psrc1, const char *src2) {
  * @param max maximum value
  * @return normalized value
  */
-static inline int __attribute__((const))
-normalize_i_range(int i, int min, int max) {
-  if (i > max) return max;
-  if (i < min) return min;
+static inline int __attribute__((const)) normalize_i_range(int i, int min,
+                                                           int max) {
+  if (i > max)
+    return max;
+  if (i < min)
+    return min;
   return i;
 }
 
 /**
  * Select the larger integer of two.
  */
-static inline int __attribute__((const))
-max_i(int a, int b) {
+static inline int __attribute__((const)) max_i(int a, int b) {
   return (a > b ? a : b);
 }
 
 /**
  * Select the smaller integer of two.
  */
-static inline int __attribute__((const))
-min_i(int a, int b) {
+static inline int __attribute__((const)) min_i(int a, int b) {
   return (a > b ? b : a);
 }
 
 /**
  * Select the larger long integer of two.
  */
-static inline long __attribute__((const))
-max_l(long a, long b) {
+static inline long __attribute__((const)) max_l(long a, long b) {
   return (a > b ? a : b);
 }
 
 /**
  * Select the smaller long integer of two.
  */
-static inline long __attribute__((const))
-min_l(long a, long b) {
+static inline long __attribute__((const)) min_l(long a, long b) {
   return (a > b ? b : a);
 }
 
@@ -1686,8 +1691,10 @@ min_l(long a, long b) {
  */
 static inline double __attribute__((const))
 normalize_d_range(double d, double min, double max) {
-  if (d > max) return max;
-  if (d < min) return min;
+  if (d > max)
+    return max;
+  if (d < min)
+    return min;
   return d;
 }
 
@@ -1697,16 +1704,14 @@ normalize_d_range(double d, double min, double max) {
  * @param d double value to normalize
  * @return normalized value
  */
-static inline double __attribute__((const))
-normalize_d(double d) {
+static inline double __attribute__((const)) normalize_d(double d) {
   return normalize_d_range(d, 0.0, 1.0);
 }
 
 /**
  * Parse a VSync option argument.
  */
-static inline bool
-parse_vsync(session_t *ps, const char *str) {
+static inline bool parse_vsync(session_t *ps, const char *str) {
   for (vsync_t i = 0; VSYNC_STRS[i]; ++i)
     if (!strcasecmp(str, VSYNC_STRS[i])) {
       ps->o.vsync = i;
@@ -1720,8 +1725,7 @@ parse_vsync(session_t *ps, const char *str) {
 /**
  * Parse a backend option argument.
  */
-static inline bool
-parse_backend(session_t *ps, const char *str) {
+static inline bool parse_backend(session_t *ps, const char *str) {
   for (enum backend i = 0; BACKEND_STRS[i]; ++i)
     if (!strcasecmp(str, BACKEND_STRS[i])) {
       ps->o.backend = i;
@@ -1744,8 +1748,7 @@ parse_backend(session_t *ps, const char *str) {
 /**
  * Parse a glx_swap_method option argument.
  */
-static inline bool
-parse_glx_swap_method(session_t *ps, const char *str) {
+static inline bool parse_glx_swap_method(session_t *ps, const char *str) {
   // Parse alias
   if (!strcmp("undefined", str)) {
     ps->o.glx_swap_method = 0;
@@ -1793,31 +1796,26 @@ parse_glx_swap_method(session_t *ps, const char *str) {
   return true;
 }
 
-timeout_t *
-timeout_insert(session_t *ps, time_ms_t interval,
-    bool (*callback)(session_t *ps, timeout_t *ptmout), void *data);
+timeout_t *timeout_insert(session_t *ps, time_ms_t interval,
+                          bool (*callback)(session_t *ps, timeout_t *ptmout),
+                          void *data);
 
-void
-timeout_invoke(session_t *ps, timeout_t *ptmout);
+void timeout_invoke(session_t *ps, timeout_t *ptmout);
 
-bool
-timeout_drop(session_t *ps, timeout_t *prm);
+bool timeout_drop(session_t *ps, timeout_t *prm);
 
-void
-timeout_reset(session_t *ps, timeout_t *ptmout);
+void timeout_reset(session_t *ps, timeout_t *ptmout);
 
 /**
  * Add a file descriptor to a select() fd_set.
  */
-static inline bool
-fds_insert_select(fd_set **ppfds, int fd) {
+static inline bool fds_insert_select(fd_set **ppfds, int fd) {
   assert(fd <= FD_SETSIZE);
 
   if (!*ppfds) {
     if ((*ppfds = malloc(sizeof(fd_set)))) {
       FD_ZERO(*ppfds);
-    }
-    else {
+    } else {
       fprintf(stderr, "Failed to allocate memory for select() fdset.\n");
       exit(1);
     }
@@ -1831,8 +1829,7 @@ fds_insert_select(fd_set **ppfds, int fd) {
 /**
  * Add a new file descriptor to wait for.
  */
-static inline bool
-fds_insert(session_t *ps, int fd, short events) {
+static inline bool fds_insert(session_t *ps, int fd, short events) {
   bool result = true;
 
   ps->nfds_max = max_i(fd + 1, ps->nfds_max);
@@ -1850,8 +1847,7 @@ fds_insert(session_t *ps, int fd, short events) {
 /**
  * Delete a file descriptor to wait for.
  */
-static inline void
-fds_drop(session_t *ps, int fd, short events) {
+static inline void fds_drop(session_t *ps, int fd, short events) {
   // Drop fd from respective fd_set-s
   if (POLLIN & events && ps->pfds_read)
     FD_CLR(fd, ps->pfds_read);
@@ -1861,16 +1857,17 @@ fds_drop(session_t *ps, int fd, short events) {
     FD_CLR(fd, ps->pfds_except);
 }
 
-#define CPY_FDS(key) \
-  fd_set * key = NULL; \
-  if (ps->key) { \
-    key = malloc(sizeof(fd_set)); \
-    memcpy(key, ps->key, sizeof(fd_set)); \
-    if (!key) { \
-      fprintf(stderr, "Failed to allocate memory for copying select() fdset.\n"); \
-      exit(1); \
-    } \
-  } \
+#define CPY_FDS(key)                                                           \
+  fd_set *key = NULL;                                                          \
+  if (ps->key) {                                                               \
+    key = malloc(sizeof(fd_set));                                              \
+    memcpy(key, ps->key, sizeof(fd_set));                                      \
+    if (!key) {                                                                \
+      fprintf(stderr,                                                          \
+              "Failed to allocate memory for copying select() fdset.\n");      \
+      exit(1);                                                                 \
+    }                                                                          \
+  }
 
 /**
  * Poll for changes.
@@ -1878,8 +1875,7 @@ fds_drop(session_t *ps, int fd, short events) {
  * poll() is much better than select(), but ppoll() does not exist on
  * *BSD.
  */
-static inline int
-fds_poll(session_t *ps, struct timeval *ptv) {
+static inline int fds_poll(session_t *ps, struct timeval *ptv) {
   // Copy fds
   CPY_FDS(pfds_read);
   CPY_FDS(pfds_write);
@@ -1900,8 +1896,7 @@ fds_poll(session_t *ps, struct timeval *ptv) {
  *
  * Because a NULL pointer cannot be passed to XFree(), its man page says.
  */
-static inline void
-cxfree(void *data) {
+static inline void cxfree(void *data) {
   if (data)
     XFree(data);
 }
@@ -1909,24 +1904,21 @@ cxfree(void *data) {
 /**
  * Wrapper of XInternAtom() for convenience.
  */
-static inline Atom
-get_atom(session_t *ps, const char *atom_name) {
+static inline Atom get_atom(session_t *ps, const char *atom_name) {
   return XInternAtom(ps->dpy, atom_name, False);
 }
 
 /**
  * Return the painting target window.
  */
-static inline Window
-get_tgt_window(session_t *ps) {
-  return ps->o.paint_on_overlay ? ps->overlay: ps->root;
+static inline Window get_tgt_window(session_t *ps) {
+  return ps->o.paint_on_overlay ? ps->overlay : ps->root;
 }
 
 /**
  * Find a window from window id in window linked list of the session.
  */
-static inline win *
-find_win(session_t *ps, Window id) {
+static inline win *find_win(session_t *ps, Window id) {
   if (!id)
     return NULL;
 
@@ -1946,8 +1938,7 @@ find_win(session_t *ps, Window id) {
  * @param id window ID
  * @return struct _win object of the found window, NULL if not found
  */
-static inline win *
-find_toplevel(session_t *ps, Window id) {
+static inline win *find_toplevel(session_t *ps, Window id) {
   if (!id)
     return NULL;
 
@@ -1959,30 +1950,24 @@ find_toplevel(session_t *ps, Window id) {
   return NULL;
 }
 
-
 /**
  * Check if current backend uses XRender for rendering.
  */
-static inline bool
-bkend_use_xrender(session_t *ps) {
-  return BKEND_XRENDER == ps->o.backend
-    || BKEND_XR_GLX_HYBRID == ps->o.backend;
+static inline bool bkend_use_xrender(session_t *ps) {
+  return BKEND_XRENDER == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
 }
 
 /**
  * Check if current backend uses GLX.
  */
-static inline bool
-bkend_use_glx(session_t *ps) {
-  return BKEND_GLX == ps->o.backend
-    || BKEND_XR_GLX_HYBRID == ps->o.backend;
+static inline bool bkend_use_glx(session_t *ps) {
+  return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
 }
 
 /**
  * Check if there's a GLX context.
  */
-static inline bool
-glx_has_context(session_t *ps) {
+static inline bool glx_has_context(session_t *ps) {
 #ifdef CONFIG_VSYNC_OPENGL
   return ps->psglx && ps->psglx->context;
 #else
@@ -1993,8 +1978,7 @@ glx_has_context(session_t *ps) {
 /**
  * Check if a window is really focused.
  */
-static inline bool
-win_is_focused_real(session_t *ps, const win *w) {
+static inline bool win_is_focused_real(session_t *ps, const win *w) {
   return IsViewable == w->a.map_state && ps->active_win == w;
 }
 
@@ -2003,9 +1987,9 @@ win_is_focused_real(session_t *ps, const win *w) {
  *
  * @return struct _win object of the found window, NULL if not found
  */
-static inline win *
-find_focused(session_t *ps) {
-  if (!ps->o.track_focus) return NULL;
+static inline win *find_focused(session_t *ps) {
+  if (!ps->o.track_focus)
+    return NULL;
 
   if (ps->active_win && win_is_focused_real(ps, ps->active_win))
     return ps->active_win;
@@ -2015,8 +1999,8 @@ find_focused(session_t *ps) {
 /**
  * Copies a region.
  */
-static inline XserverRegion
-copy_region(const session_t *ps, XserverRegion oldregion) {
+static inline XserverRegion copy_region(const session_t *ps,
+                                        XserverRegion oldregion) {
   if (!oldregion)
     return None;
 
@@ -2030,8 +2014,7 @@ copy_region(const session_t *ps, XserverRegion oldregion) {
 /**
  * Destroy a <code>XserverRegion</code>.
  */
-static inline void
-free_region(session_t *ps, XserverRegion *p) {
+static inline void free_region(session_t *ps, XserverRegion *p) {
   if (*p) {
     XFixesDestroyRegion(ps->dpy, *p);
     *p = None;
@@ -2041,8 +2024,7 @@ free_region(session_t *ps, XserverRegion *p) {
 /**
  * Free all regions in ps->all_damage_last .
  */
-static inline void
-free_all_damage_last(session_t *ps) {
+static inline void free_all_damage_last(session_t *ps) {
   for (int i = 0; i < CGLX_MAX_BUFFER_AGE; ++i)
     free_region(ps, &ps->all_damage_last[i]);
 }
@@ -2051,14 +2033,13 @@ free_all_damage_last(session_t *ps) {
 /**
  * Free a XSync fence.
  */
-static inline void
-free_fence(session_t *ps, XSyncFence *pfence) {
+static inline void free_fence(session_t *ps, XSyncFence *pfence) {
   if (*pfence)
     XSyncDestroyFence(ps->dpy, *pfence);
   *pfence = None;
 }
 #else
-#define free_fence(ps, pfence) ((void) 0)
+#define free_fence(ps, pfence) ((void)0)
 #endif
 
 /**
@@ -2066,22 +2047,24 @@ free_fence(session_t *ps, XSyncFence *pfence) {
  *
  * psrc and pdst cannot be the same.
  */
-static inline void
-rect_crop(XRectangle *pdst, const XRectangle *psrc, const XRectangle *pbound) {
+static inline void rect_crop(XRectangle *pdst, const XRectangle *psrc,
+                             const XRectangle *pbound) {
   assert(psrc != pdst);
   pdst->x = max_i(psrc->x, pbound->x);
   pdst->y = max_i(psrc->y, pbound->y);
-  pdst->width = max_i(0, min_i(psrc->x + psrc->width, pbound->x + pbound->width) - pdst->x);
-  pdst->height = max_i(0, min_i(psrc->y + psrc->height, pbound->y + pbound->height) - pdst->y);
+  pdst->width = max_i(
+      0, min_i(psrc->x + psrc->width, pbound->x + pbound->width) - pdst->x);
+  pdst->height = max_i(
+      0, min_i(psrc->y + psrc->height, pbound->y + pbound->height) - pdst->y);
 }
 
 /**
  * Check if a rectangle includes the whole screen.
  */
-static inline bool
-rect_is_fullscreen(session_t *ps, int x, int y, unsigned wid, unsigned hei) {
-  return (x <= 0 && y <= 0
-      && (x + wid) >= ps->root_width && (y + hei) >= ps->root_height);
+static inline bool rect_is_fullscreen(session_t *ps, int x, int y, unsigned wid,
+                                      unsigned hei) {
+  return (x <= 0 && y <= 0 && (x + wid) >= ps->root_width &&
+          (y + hei) >= ps->root_height);
 }
 
 /**
@@ -2089,17 +2072,15 @@ rect_is_fullscreen(session_t *ps, int x, int y, unsigned wid, unsigned hei) {
  *
  * It's not using w->border_size for performance measures.
  */
-static inline bool
-win_is_fullscreen(session_t *ps, const win *w) {
-  return rect_is_fullscreen(ps, w->a.x, w->a.y, w->widthb, w->heightb)
-      && (!w->bounding_shaped || w->rounded_corners);
+static inline bool win_is_fullscreen(session_t *ps, const win *w) {
+  return rect_is_fullscreen(ps, w->a.x, w->a.y, w->widthb, w->heightb) &&
+         (!w->bounding_shaped || w->rounded_corners);
 }
 
 /**
  * Check if a window will be painted solid.
  */
-static inline bool
-win_is_solid(session_t *ps, const win *w) {
+static inline bool win_is_solid(session_t *ps, const win *w) {
   return WMODE_SOLID == w->mode && !ps->o.force_win_blend;
 }
 
@@ -2111,67 +2092,70 @@ win_is_solid(session_t *ps, const win *w) {
  * @param atom atom of property to check
  * @return 1 if it has the attribute, 0 otherwise
  */
-static inline bool
-wid_has_prop(const session_t *ps, Window w, Atom atom) {
+static inline bool wid_has_prop(const session_t *ps, Window w, Atom atom) {
   Atom type = None;
   int format;
   unsigned long nitems, after;
   unsigned char *data;
 
   if (Success == XGetWindowProperty(ps->dpy, w, atom, 0, 0, False,
-        AnyPropertyType, &type, &format, &nitems, &after, &data)) {
+                                    AnyPropertyType, &type, &format, &nitems,
+                                    &after, &data)) {
     cxfree(data);
-    if (type) return true;
+    if (type)
+      return true;
   }
 
   return false;
 }
 
-winprop_t
-wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
-    long length, Atom rtype, int rformat);
+winprop_t wid_get_prop_adv(const session_t *ps, Window w, Atom atom,
+                           long offset, long length, Atom rtype, int rformat);
 
 /**
  * Wrapper of wid_get_prop_adv().
  */
-static inline winprop_t
-wid_get_prop(const session_t *ps, Window wid, Atom atom, long length,
-    Atom rtype, int rformat) {
+static inline winprop_t wid_get_prop(const session_t *ps, Window wid, Atom atom,
+                                     long length, Atom rtype, int rformat) {
   return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
 }
 
 /**
  * Get the numeric property value from a win_prop_t.
  */
-static inline long
-winprop_get_int(winprop_t prop) {
+static inline long winprop_get_int(winprop_t prop) {
   long tgt = 0;
 
   if (!prop.nitems)
     return 0;
 
   switch (prop.format) {
-    case 8:   tgt = *(prop.data.p8);    break;
-    case 16:  tgt = *(prop.data.p16);   break;
-    case 32:  tgt = *(prop.data.p32);   break;
-    default:  assert(0);
-              break;
+  case 8:
+    tgt = *(prop.data.p8);
+    break;
+  case 16:
+    tgt = *(prop.data.p16);
+    break;
+  case 32:
+    tgt = *(prop.data.p32);
+    break;
+  default:
+    assert(0);
+    break;
   }
 
   return tgt;
 }
 
-bool
-wid_get_text_prop(session_t *ps, Window wid, Atom prop,
-    char ***pstrlst, int *pnstr);
+bool wid_get_text_prop(session_t *ps, Window wid, Atom prop, char ***pstrlst,
+                       int *pnstr);
 
 /**
  * Free a <code>winprop_t</code>.
  *
  * @param pprop pointer to the <code>winprop_t</code> to free.
  */
-static inline void
-free_winprop(winprop_t *pprop) {
+static inline void free_winprop(winprop_t *pprop) {
   // Empty the whole structure to avoid possible issues
   if (pprop->data.p8) {
     cxfree(pprop->data.p8);
@@ -2180,14 +2164,11 @@ free_winprop(winprop_t *pprop) {
   pprop->nitems = 0;
 }
 
-void
-force_repaint(session_t *ps);
+void force_repaint(session_t *ps);
 
-bool
-vsync_init(session_t *ps);
+bool vsync_init(session_t *ps);
 
-void
-vsync_deinit(session_t *ps);
+void vsync_deinit(session_t *ps);
 
 #ifdef CONFIG_VSYNC_OPENGL
 /** @name GLX
@@ -2195,130 +2176,111 @@ vsync_deinit(session_t *ps);
 ///@{
 
 #ifdef CONFIG_GLX_SYNC
-void
-xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence);
+void xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence);
 #endif
 
-bool
-glx_init(session_t *ps, bool need_render);
+bool glx_init(session_t *ps, bool need_render);
 
-void
-glx_destroy(session_t *ps);
+void glx_destroy(session_t *ps);
 
-bool
-glx_reinit(session_t *ps, bool need_render);
+bool glx_reinit(session_t *ps, bool need_render);
 
-void
-glx_on_root_change(session_t *ps);
+void glx_on_root_change(session_t *ps);
 
-bool
-glx_init_blur(session_t *ps);
+bool glx_init_blur(session_t *ps);
 
-bool
-glx_init_blur_kawase(session_t *ps);
+bool glx_init_blur_kawase(session_t *ps);
 
-void
-glx_dual_kawase_blur(session_t *ps, int x, int y, int width, int height,
-    float z, XserverRegion reg_paint, const reg_data_t *pcache_reg);
+void glx_dual_kawase_blur(session_t *ps, int x, int y, int width, int height,
+                          float z, XserverRegion reg_paint,
+                          const reg_data_t *pcache_reg);
 
-void
-glx_destroy_blur_kawase(session_t *ps);
+void glx_destroy_blur_kawase(session_t *ps);
 
-bool
-glx_init_greyscale(session_t *ps);
+bool glx_init_greyscale(session_t *ps);
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
-bool
-glx_load_prog_main(session_t *ps,
-    const char *vshader_str, const char *fshader_str,
-    glx_prog_main_t *pprogram);
+bool glx_load_prog_main(session_t *ps, const char *vshader_str,
+                        const char *fshader_str, glx_prog_main_t *pprogram);
 #endif
 
-bool
-glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
-    unsigned width, unsigned height, unsigned depth);
+bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
+                     unsigned width, unsigned height, unsigned depth);
 
-void
-glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
+void glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
 
-void
-glx_paint_pre(session_t *ps, XserverRegion *preg);
+void glx_paint_pre(session_t *ps, XserverRegion *preg);
 
 /**
  * Check if a texture is binded, or is binded to the given pixmap.
  */
-static inline bool
-glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
-  return ptex && ptex->glpixmap && ptex->texture
-    && (!pixmap || pixmap == ptex->pixmap);
+static inline bool glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
+  return ptex && ptex->glpixmap && ptex->texture &&
+         (!pixmap || pixmap == ptex->pixmap);
 }
 
-void
-glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg);
+void glx_set_clip(session_t *ps, XserverRegion reg,
+                  const reg_data_t *pcache_reg);
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
-bool
-glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    GLfloat factor_center,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg,
-    glx_blur_cache_t *pbc);
+bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+                  GLfloat factor_center, XserverRegion reg_tgt,
+                  const reg_data_t *pcache_reg, glx_blur_cache_t *pbc);
 #endif
 
-bool
-glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    GLfloat factor, XserverRegion reg_tgt, const reg_data_t *pcache_reg);
+bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+                 GLfloat factor, XserverRegion reg_tgt,
+                 const reg_data_t *pcache_reg);
 
-bool
-glx_greyscale_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    glx_texture_t *ptex, XserverRegion reg_tgt, const reg_data_t *pcache_reg, glx_greyscale_cache_t *pbc);
+bool glx_greyscale_dst(session_t *ps, int dx, int dy, int width, int height,
+                       float z, glx_texture_t *ptex, XserverRegion reg_tgt,
+                       const reg_data_t *pcache_reg,
+                       glx_greyscale_cache_t *pbc);
 
-bool
-glx_render_(session_t *ps, const glx_texture_t *ptex,
-    int x, int y, int dx, int dy, int width, int height, int z,
-    double opacity, bool argb, bool neg,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg
+bool glx_render_(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx,
+                 int dy, int width, int height, int z, double opacity,
+                 bool argb, bool neg, XserverRegion reg_tgt,
+                 const reg_data_t *pcache_reg
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
-    , const glx_prog_main_t *pprogram
+                 ,
+                 const glx_prog_main_t *pprogram
 #endif
-    );
+);
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
-#define \
-   glx_render(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg, pprogram) \
-  glx_render_(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg, pprogram)
+#define glx_render(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb,    \
+                   neg, reg_tgt, pcache_reg, pprogram)                         \
+  glx_render_(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg,    \
+              reg_tgt, pcache_reg, pprogram)
 #else
-#define \
-   glx_render(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg, pprogram) \
-  glx_render_(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg)
+#define glx_render(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb,    \
+                   neg, reg_tgt, pcache_reg, pprogram)                         \
+  glx_render_(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg,    \
+              reg_tgt, pcache_reg)
 #endif
 
-bool
-glx_render_specified_color(session_t *ps, int color, int dx, int dy, int width, int height, int z,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg);
+bool glx_render_specified_color(session_t *ps, int color, int dx, int dy,
+                                int width, int height, int z,
+                                XserverRegion reg_tgt,
+                                const reg_data_t *pcache_reg);
 
-void
-glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg);
+void glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg);
 
-unsigned char *
-glx_take_screenshot(session_t *ps, int *out_length);
+unsigned char *glx_take_screenshot(session_t *ps, int *out_length);
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
-GLuint
-glx_create_shader(GLenum shader_type, const char *shader_str);
+GLuint glx_create_shader(GLenum shader_type, const char *shader_str);
 
-GLuint
-glx_create_program(const GLuint * const shaders, int nshaders);
+GLuint glx_create_program(const GLuint *const shaders, int nshaders);
 
-GLuint
-glx_create_program_from_str(const char *vert_shader_str,
-    const char *frag_shader_str);
+GLuint glx_create_program_from_str(const char *vert_shader_str,
+                                   const char *frag_shader_str);
 #endif
 
 /**
  * Free a GLX texture.
  */
-static inline void
-free_texture_r(session_t *ps, GLuint *ptexture) {
+static inline void free_texture_r(session_t *ps, GLuint *ptexture) {
   if (*ptexture) {
     assert(glx_has_context(ps));
     glDeleteTextures(1, ptexture);
@@ -2329,8 +2291,7 @@ free_texture_r(session_t *ps, GLuint *ptexture) {
 /**
  * Free a GLX Framebuffer object.
  */
-static inline void
-free_glx_fbo(session_t *ps, GLuint *pfbo) {
+static inline void free_glx_fbo(session_t *ps, GLuint *pfbo) {
 #ifdef CONFIG_VSYNC_OPENGL_FBO
   if (*pfbo) {
     glDeleteFramebuffers(1, pfbo);
@@ -2344,8 +2305,7 @@ free_glx_fbo(session_t *ps, GLuint *pfbo) {
 /**
  * Free data in glx_blur_cache_t on resize.
  */
-static inline void
-free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
+static inline void free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
   free_texture_r(ps, &pbc->textures[0]);
   free_texture_r(ps, &pbc->textures[1]);
   pbc->width = 0;
@@ -2355,8 +2315,7 @@ free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
 /**
  * Free a glx_blur_cache_t
  */
-static inline void
-free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
+static inline void free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
   free_glx_fbo(ps, &pbc->fbo);
   free_glx_bc_resize(ps, pbc);
 }
@@ -2364,8 +2323,8 @@ free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
 /**
  * Free data in glx_greyscale_cache_t on resize.
  */
-static inline void
-free_glx_gc_resize(session_t *ps, glx_greyscale_cache_t *pbc) {
+static inline void free_glx_gc_resize(session_t *ps,
+                                      glx_greyscale_cache_t *pbc) {
   free_texture_r(ps, &pbc->textures[0]);
   pbc->width = 0;
   pbc->height = 0;
@@ -2374,8 +2333,7 @@ free_glx_gc_resize(session_t *ps, glx_greyscale_cache_t *pbc) {
 /**
  * Free a glx_greyscale_cache_t
  */
-static inline void
-free_glx_gc(session_t *ps, glx_greyscale_cache_t *pbc) {
+static inline void free_glx_gc(session_t *ps, glx_greyscale_cache_t *pbc) {
   free_glx_fbo(ps, &pbc->fbo);
   free_glx_gc_resize(ps, pbc);
 }
@@ -2385,8 +2343,7 @@ free_glx_gc(session_t *ps, glx_greyscale_cache_t *pbc) {
 /**
  * Free a glx_texture_t.
  */
-static inline void
-free_texture(session_t *ps, glx_texture_t **pptex) {
+static inline void free_texture(session_t *ps, glx_texture_t **pptex) {
   glx_texture_t *ptex = *pptex;
 
   // Quit if there's nothing
@@ -2408,16 +2365,14 @@ free_texture(session_t *ps, glx_texture_t **pptex) {
 /**
  * Free GLX part of paint_t.
  */
-static inline void
-free_paint_glx(session_t *ps, paint_t *ppaint) {
+static inline void free_paint_glx(session_t *ps, paint_t *ppaint) {
   free_texture(ps, &ppaint->ptex);
 }
 
 /**
  * Free GLX part of win.
  */
-static inline void
-free_win_res_glx(session_t *ps, win *w) {
+static inline void free_win_res_glx(session_t *ps, win *w) {
   free_paint_glx(ps, &w->paint);
   free_paint_glx(ps, &w->shadow_paint);
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
@@ -2429,14 +2384,15 @@ free_win_res_glx(session_t *ps, win *w) {
 /**
  * Add a OpenGL debugging marker.
  */
-static inline void
-glx_mark_(session_t *ps, const char *func, XID xid, bool start) {
+static inline void glx_mark_(session_t *ps, const char *func, XID xid,
+                             bool start) {
 #ifdef DEBUG_GLX_MARK
   if (glx_has_context(ps) && ps->psglx->glStringMarkerGREMEDY) {
-    if (!func) func = "(unknown)";
-    const char *postfix = (start ? " (start)": " (end)");
-    char *str = malloc((strlen(func) + 12 + 2
-          + strlen(postfix) + 5) * sizeof(char));
+    if (!func)
+      func = "(unknown)";
+    const char *postfix = (start ? " (start)" : " (end)");
+    char *str =
+        malloc((strlen(func) + 12 + 2 + strlen(postfix) + 5) * sizeof(char));
     strcpy(str, func);
     sprintf(str + strlen(str), "(%#010lx)%s", xid, postfix);
     ps->psglx->glStringMarkerGREMEDY(strlen(str), str);
@@ -2450,8 +2406,7 @@ glx_mark_(session_t *ps, const char *func, XID xid, bool start) {
 /**
  * Add a OpenGL debugging marker.
  */
-static inline void
-glx_mark_frame(session_t *ps) {
+static inline void glx_mark_frame(session_t *ps) {
 #ifdef DEBUG_GLX_MARK
   if (glx_has_context(ps) && ps->psglx->glFrameTerminatorGREMEDY)
     ps->psglx->glFrameTerminatorGREMEDY();
@@ -2470,12 +2425,12 @@ glx_mark_frame(session_t *ps) {
  * Synchronizes a X Render drawable to ensure all pending painting requests
  * are completed.
  */
-static inline void
-xr_sync_(session_t *ps, Drawable d
+static inline void xr_sync_(session_t *ps, Drawable d
 #ifdef CONFIG_XSYNC
-    , XSyncFence *pfence
+                            ,
+                            XSyncFence *pfence
 #endif
-    ) {
+) {
   if (!ps->o.xrender_sync)
     return;
 
@@ -2500,8 +2455,7 @@ xr_sync_(session_t *ps, Drawable d
       XSyncTriggerFence(ps->dpy, *pfence);
       XSyncAwaitFence(ps->dpy, pfence, 1);
       assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || triggered);
-    }
-    else {
+    } else {
       printf_errf("(%#010lx): Failed to create X Sync fence.", d);
     }
     free_fence(ps, &tmp_fence);
@@ -2521,57 +2475,41 @@ xr_sync_(session_t *ps, Drawable d
 /** @name DBus handling
  */
 ///@{
-bool
-cdbus_init(session_t *ps);
+bool cdbus_init(session_t *ps);
 
-void
-cdbus_destroy(session_t *ps);
+void cdbus_destroy(session_t *ps);
 
-void
-cdbus_loop(session_t *ps);
+void cdbus_loop(session_t *ps);
 
-void
-cdbus_ev_win_added(session_t *ps, win *w);
+void cdbus_ev_win_added(session_t *ps, win *w);
 
-void
-cdbus_ev_win_destroyed(session_t *ps, win *w);
+void cdbus_ev_win_destroyed(session_t *ps, win *w);
 
-void
-cdbus_ev_win_mapped(session_t *ps, win *w);
+void cdbus_ev_win_mapped(session_t *ps, win *w);
 
-void
-cdbus_ev_win_unmapped(session_t *ps, win *w);
+void cdbus_ev_win_unmapped(session_t *ps, win *w);
 
-void
-cdbus_ev_win_focusout(session_t *ps, win *w);
+void cdbus_ev_win_focusout(session_t *ps, win *w);
 
-void
-cdbus_ev_win_focusin(session_t *ps, win *w);
+void cdbus_ev_win_focusin(session_t *ps, win *w);
 //!@}
 
 /** @name DBus hooks
  */
 ///@{
-void
-win_set_shadow_force(session_t *ps, win *w, switch_t val);
+void win_set_shadow_force(session_t *ps, win *w, switch_t val);
 
-void
-win_set_fade_force(session_t *ps, win *w, switch_t val);
+void win_set_fade_force(session_t *ps, win *w, switch_t val);
 
-void
-win_set_focused_force(session_t *ps, win *w, switch_t val);
+void win_set_focused_force(session_t *ps, win *w, switch_t val);
 
-void
-win_set_invert_color_force(session_t *ps, win *w, switch_t val);
+void win_set_invert_color_force(session_t *ps, win *w, switch_t val);
 
-void
-opts_init_track_focus(session_t *ps);
+void opts_init_track_focus(session_t *ps);
 
-void
-opts_set_no_fading_openclose(session_t *ps, bool newval);
+void opts_set_no_fading_openclose(session_t *ps, bool newval);
 
-void
-opts_set_no_fading_opacitychange(session_t *ps, bool newval);
+void opts_set_no_fading_opacitychange(session_t *ps, bool newval);
 //!@}
 #endif
 
@@ -2580,21 +2518,19 @@ opts_set_no_fading_opacitychange(session_t *ps, bool newval);
  */
 ///@{
 
-c2_lptr_t *
-c2_parsed(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
-    void *data);
+c2_lptr_t *c2_parsed(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
+                     void *data);
 
-#define c2_parse(ps, pcondlst, pattern) c2_parsed((ps), (pcondlst), (pattern), NULL)
+#define c2_parse(ps, pcondlst, pattern)                                        \
+  c2_parsed((ps), (pcondlst), (pattern), NULL)
 
-c2_lptr_t *
-c2_free_lptr(c2_lptr_t *lp);
+c2_lptr_t *c2_free_lptr(c2_lptr_t *lp);
 
-bool
-c2_matchd(session_t *ps, win *w, const c2_lptr_t *condlst,
-    const c2_lptr_t **cache, void **pdata);
+bool c2_matchd(session_t *ps, win *w, const c2_lptr_t *condlst,
+               const c2_lptr_t **cache, void **pdata);
 
-#define c2_match(ps, w, condlst, cache) c2_matchd((ps), (w), (condlst), \
-    (cache), NULL)
+#define c2_match(ps, w, condlst, cache)                                        \
+  c2_matchd((ps), (w), (condlst), (cache), NULL)
 #endif
 
 ///@}
@@ -2602,8 +2538,8 @@ c2_matchd(session_t *ps, win *w, const c2_lptr_t *condlst,
 /**
  * @brief Dump the given data to a file.
  */
-static inline bool
-write_binary_data(const char *path, const unsigned char *data, int length) {
+static inline bool write_binary_data(const char *path,
+                                     const unsigned char *data, int length) {
   if (!data)
     return false;
   FILE *f = fopen(path, "wb");
@@ -2615,7 +2551,7 @@ write_binary_data(const char *path, const unsigned char *data, int length) {
   fclose(f);
   if (wrote_len != length) {
     printf_errf("(\"%s\"): Failed to write all blocks: %d / %d", path,
-        wrote_len, length);
+                wrote_len, length);
     return false;
   }
   return true;
@@ -2627,8 +2563,7 @@ write_binary_data(const char *path, const unsigned char *data, int length) {
  * @param data pointer to raw data
  * @param len length of data
  */
-static inline void
-hexdump(const char *data, int len) {
+static inline void hexdump(const char *data, int len) {
   static const int BYTE_PER_LN = 16;
 
   if (len <= 0)
