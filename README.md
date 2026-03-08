@@ -38,9 +38,8 @@ It has been decoupled from the core TDE build system to ensure portability acros
 
 ### Strict-Aliasing UB in `get_window_transparency_filter_*` (§4.8)
 Four functions used `*(long *)data` to read an `unsigned char *` returned by `XGetWindowProperty`.
-This violates C99 strict-aliasing rules and produces incorrect code with `-fstrict-aliasing` (active by default).
-The Atom value was never actually used — the functions only checked for property *existence* — so the cast was removed entirely, leaving only the `XFree` call.
-Also fixed: `data` now initialised to `NULL` before `XGetWindowProperty`, so the error-path `XFree` is safe.
+The Atom value was never actually used — the functions only checked for property *existence* , so the cast was removed entirely, leaving only the `XFree` call.
++fix: `data` initialised to `NULL` before `XGetWindowProperty`, so error-path `XFree` is safe.
 
 ### Unbounded X11 Tree Recursion in `determine_window_*` (§4.3 + §1.2)
 Four functions traversed the entire X11 window tree recursively without any depth limit,
