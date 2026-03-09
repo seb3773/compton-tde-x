@@ -26,10 +26,26 @@ It has been decoupled from the core TDE build system to ensure portability acros
     - **OpenGL Shader Build**: Optimized shader string building with cached lengths and `sprintf` return values.
     - **Monotonic Clock**: Replaced `gettimeofday` with `clock_gettime(CLOCK_MONOTONIC_COARSE)` for faster timing.
     - **Dual-Kawase Blur Support**:multi-pass blur technique, good visual quality at low sample cost
+    - **PID-Based Window Class Inheritance**: Chrome, Chromium, and Electron applications are now automatically matched by class_i/class_g conditions.
     - **Native Software Cursor**: usefull to fix cursor flickering with some Mixed-DPI Supersampling configurations.
 *   **Configuration**: Full support for `libconfig` parsing and PCRE2 regex is included.
 *   **OpenGL Backend**: Explicitly enabled (`-DWITH_OPENGL=ON`) to ensure hardware acceleration is available.
 
+
+## PID-Based Window Class Inheritance (compton.c, common.h)
+Applications like Chrome/Electron/Chromium create popup, menu, tooltip, and overlay windows as override-redirect X11 windows. These transient windows frequently do not have WM_CLASS set directly on them, even when the main application window does :-( This caused conditions like class_i *= 'chrome' in shadow-exclude or blur-background-exclude to silently fail for all popup/menu windows from those applications ! For exeample, chrome auxiliary windows were listed with an empty class (), while the main browser window had WM_CLASS = ("google-chrome", "Google-chrome").
+Th fix: (win_get_class() — compton.c): When WM_CLASS is not found on an override-redirect window, two fallback mechanisms are attempted in order:
+WM_TRANSIENT_FOR inheritance: If the window declares a parent via WM_TRANSIENT_FOR, and that parent window is a tracked compton window with a resolved class, the parent's class_instance and class_general are inherited.
+_NET_WM_PID inheritance (primary fix for Chrome/Electron): The window's _NET_WM_PID is read (via the new ps->atom_pid atom). All windows currently tracked in ps->list are scanned for a window with the same PID that already has WM_CLASS resolved (reading PID from client_win to correctly handle WM-reparented windows). When a PID-sibling is found, its class is inherited by the classless popup window.
+So now, popup and menu windows from Chrome, Chromium, and Electron applications are now automatically matched by class_i/class_g conditions.
+Example:
+shadow-exclude = [ "class_i *= 'chrome'" ];
+blur-background-exclude = [ "class_i *= 'chrome'" ];
+
+## Native Software Cursor for Mixed-DPI Supersampling (--sw-cursor / sw-cursor = true)
+When using multiple monitors with different scaling factors (e.g. 4K at 2.0x and 1080p at 1.0x), the only perfect way to scale X11 is via XRandR supersampling (scaling the output framebuffer). However, certain video drivers (like NVIDIA) have a bug where the hardware mouse cursor "flickers" or disappears on one of the screens because the hardware cursor overlay plane clashes with the scaled XRandR coordinates.
+To "fix" this exact situation, Compton-TDE 3.0 introduces a native software cursor.
+You can enable it by running compton-tde --sw-cursor or by adding sw-cursor = true; to your compton.conf file.
 
 ## What is Dual-Kawase Blur?
 
