@@ -206,6 +206,9 @@
 #define printf_err(format, ...) ((void)0)
 #define printf_errf(format, ...) ((void)0)
 #define printf_errfq(code, format, ...) exit(code)
+#define printf(format, ...) ((void)0)
+#define fprintf(stream, format, ...) ((void)0)
+#define fputs(str, stream) ((void)0)
 #else
 #define printf_err(format, ...) fprintf(stderr, format "\n", ##__VA_ARGS__)
 
@@ -914,6 +917,10 @@ typedef struct {
 #endif
   /// Current GLX Z value.
   int z;
+  /// Cached state for GL_SCISSOR_TEST
+  bool glx_scissor_enabled;
+  /// Cached state for GL_STENCIL_TEST
+  bool glx_stencil_enabled;
   /// FBConfig-s for GLX pixmap of different depths.
   glx_fbconfig_t *fbconfigs[OPENGL_MAX_DEPTH + 1];
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
@@ -1029,7 +1036,7 @@ typedef struct _session_t {
    * is full when (tail_idx - head_idx) & IGNORE_BUF_MASK == IGNORE_BUF_MASK.
    *  Size must be a power of 2 and > the maximum simultaneous ignored requests.
    */
-#define IGNORE_BUF_SIZE 128u
+#define IGNORE_BUF_SIZE 2048u
 #define IGNORE_BUF_MASK (IGNORE_BUF_SIZE - 1u)
   unsigned long ignore_buf[IGNORE_BUF_SIZE]; /**< circular sequence ring */
   unsigned int ignore_head_idx;              /**< consumer index (read)  */
@@ -1055,6 +1062,9 @@ typedef struct _session_t {
   /** §1.1: O(1) Window→win* lookup table.  256 buckets, open addressing via
    *  ht_next.  Indexed by (Window & 0xFF).  Always kept in sync with list. */
   struct _win *win_ht[256];
+  /** §1.2: O(1) client_win→win* lookup table.  256 buckets, open addressing
+   *  via clt_next.  Only populated for windows where client_win != id. */
+  struct _win *clt_ht[256];
   /// Pointer to <code>win</code> of current active window. Used by
   /// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
   /// it's more reliable to store the window ID directly here, just in
@@ -1191,6 +1201,8 @@ typedef struct _session_t {
   Atom atom_compton_shadow;
   /// Atom of property <code>_NET_WM_WINDOW_TYPE</code>.
   Atom atom_win_type;
+  /// Atom of property <code>WM_HINTS</code> (for urgency caching, §5.1).
+  Atom atom_wm_hints;
   /// Atom of property <code>_NET_WM_PID</code>.
   Atom atom_pid;
   /// Atom of property <code>_TDE_TRANSPARENT_TO_BLACK</code>.
@@ -1228,10 +1240,10 @@ typedef struct _session_t {
 
 /// Structure representing a top-level window compton manages.
 typedef struct _win {
-  // === Pointers (8 bytes) ===
+  // === Pointers (8 bytes each) ===
   struct _win *next;
-  struct _win
-      *ht_next; /**< §1.1: hash-table collision chain, NULL-terminated */
+  struct _win *ht_next;  /**< §1.1: win_ht collision chain */
+  struct _win *clt_next; /**< §1.2: clt_ht collision chain (client_win table) */
   struct _win *prev_trans;
   XRenderPictFormat *pictfmt;
   char *name;
@@ -1248,45 +1260,51 @@ typedef struct _win {
   const c2_lptr_t *cache_uipblst;
   void (*fade_callback)(session_t *ps, struct _win *w);
 
-  // === XIDs / Longs / Doubles (8 bytes) ===
+  // === XIDs / Longs / Doubles (8 bytes each) ===
   Window id;
   Window client_win;
   Window leader;
   Window cache_leader;
+  Window frame_parent; /**< §3.1: cached direct X11 parent, avoids XQueryTree */
   Damage damage;
   XserverRegion border_size;
   XserverRegion extents;
   XserverRegion reg_ignore;
   long prop_shadow;
+  long
+      cached_pid; /**< §audit-14: cached _NET_WM_PID for O(n)→O(1) class scan */
   double frame_opacity;
   double shadow_opacity;
+
+  // === Floats (4 bytes) ===
   float last_factor_center; /**< §1.3: cached factor_center, -1 = never set */
 
-  // === Ints / Enums (4 bytes) ===
+  // === Ints / Enums (4 bytes each) ===
   winmode_t mode;
   wintype_t window_type;
-  int_fast16_t flags; // Usually 4 bytes on 64-bit int
+  int_fast16_t flags;
   int xinerama_scr;
-  uint16_t widthb, heightb;
+  int shadow_size;
+  int greyscale_blended_background_alpha_divisor;
   opacity_t opacity;
   opacity_t opacity_tgt;
   opacity_t opacity_prop;
   opacity_t opacity_prop_client;
   opacity_t opacity_set;
-  int16_t shadow_dx;
-  int16_t shadow_dy;
-  uint16_t
-      shadow_width; /**< §2.1: was int (4B), now uint16_t (2B); saves 4B/win */
-  uint16_t shadow_height;
-  int shadow_size;
-  uint16_t left_width, right_width, top_width, bottom_width;
-  int greyscale_blended_background_alpha_divisor;
   switch_t focused_force;
   switch_t fade_force;
   switch_t shadow_force;
   switch_t invert_color_force;
 
-  // === Bools (1 byte) ===
+  // === 16-bit fields grouped together (2 bytes each, no padding waste) ===
+  uint16_t widthb, heightb;
+  int16_t shadow_dx; /**< §4B: grouped with other 16-bit fields */
+  int16_t shadow_dy;
+  uint16_t shadow_width; /**< §2.1: was int (4B), now uint16_t (2B) */
+  uint16_t shadow_height;
+  uint16_t left_width, right_width, top_width, bottom_width;
+
+  // === Bools grouped together (1 byte each, no inter-bool padding) ===
   bool damaged;
   bool pixmap_damaged;
   bool need_configure;
@@ -1313,6 +1331,7 @@ typedef struct _win {
   bool greyscale_blended_background;
   bool show_black_background;
   bool show_root_tile;
+  bool urgency; /**< §5.1: cached WM_HINTS urgency flag, avoids XGetWMHints */
 
   // === Structs (Large / Mixed) ===
   XWindowAttributes a;
@@ -1652,12 +1671,21 @@ static inline char *mstrjoin3(const char *src1, const char *src2,
 
 /**
  * Concatenate a string on heap with another string.
+ *
+ * §audit-4: when *psrc1 is NULL, crealloc behaves as malloc and returns
+ * uninitialised memory.  The old code used strcat() which searches for
+ * '\0' in the uninitialised buffer — undefined behaviour.
+ * Now we use strcpy() when the original pointer was NULL.
  */
 static inline void mstrextend(char **psrc1, const char *src2) {
+  bool was_null = !*psrc1;
   *psrc1 =
       crealloc(*psrc1, (*psrc1 ? strlen(*psrc1) : 0) + strlen(src2) + 1, char);
 
-  strcat(*psrc1, src2);
+  if (was_null)
+    strcpy(*psrc1, src2);
+  else
+    strcat(*psrc1, src2);
 }
 
 /**
@@ -1832,16 +1860,22 @@ void timeout_reset(session_t *ps, timeout_t *ptmout);
 
 /**
  * Add a file descriptor to a select() fd_set.
+ *
+ * §audit-3: replaced assert(fd <= FD_SETSIZE) (disabled by -DNDEBUG in
+ * production) with a runtime check that returns false.  Without this,
+ * FD_SET on an out-of-range fd writes beyond the fd_set → heap overflow.
+ * Also replaced exit(1) on OOM with a clean return false.
  */
 static inline bool fds_insert_select(fd_set **ppfds, int fd) {
-  assert(fd <= FD_SETSIZE);
+  if (fd < 0 || fd >= FD_SETSIZE)
+    return false;
 
   if (!*ppfds) {
     if ((*ppfds = malloc(sizeof(fd_set)))) {
       FD_ZERO(*ppfds);
     } else {
       fprintf(stderr, "Failed to allocate memory for select() fdset.\n");
-      exit(1);
+      return false;
     }
   }
 
@@ -1881,39 +1915,36 @@ static inline void fds_drop(session_t *ps, int fd, short events) {
     FD_CLR(fd, ps->pfds_except);
 }
 
-#define CPY_FDS(key)                                                           \
-  fd_set *key = NULL;                                                          \
-  if (ps->key) {                                                               \
-    key = malloc(sizeof(fd_set));                                              \
-    memcpy(key, ps->key, sizeof(fd_set));                                      \
-    if (!key) {                                                                \
-      fprintf(stderr,                                                          \
-              "Failed to allocate memory for copying select() fdset.\n");      \
-      exit(1);                                                                 \
-    }                                                                          \
-  }
-
 /**
  * Poll for changes.
  *
  * poll() is much better than select(), but ppoll() does not exist on
  * *BSD.
+ *
+ * §audit-1: replaced the old CPY_FDS macro that malloc'd + free'd 3 fd_set
+ * per call (hot-path!) with simple stack copies.  Also fixes a UB in
+ * CPY_FDS where memcpy(key, ...) executed before the NULL-check of key.
  */
 static inline int fds_poll(session_t *ps, struct timeval *ptv) {
-  // Copy fds
-  CPY_FDS(pfds_read);
-  CPY_FDS(pfds_write);
-  CPY_FDS(pfds_except);
+  fd_set fds_read, fds_write, fds_except;
 
-  int ret = select(ps->nfds_max, pfds_read, pfds_write, pfds_except, ptv);
+  fd_set *pr = NULL, *pw = NULL, *pe = NULL;
 
-  free(pfds_read);
-  free(pfds_write);
-  free(pfds_except);
+  if (ps->pfds_read) {
+    memcpy(&fds_read, ps->pfds_read, sizeof(fd_set));
+    pr = &fds_read;
+  }
+  if (ps->pfds_write) {
+    memcpy(&fds_write, ps->pfds_write, sizeof(fd_set));
+    pw = &fds_write;
+  }
+  if (ps->pfds_except) {
+    memcpy(&fds_except, ps->pfds_except, sizeof(fd_set));
+    pe = &fds_except;
+  }
 
-  return ret;
+  return select(ps->nfds_max, pr, pw, pe, ptv);
 }
-#undef CPY_FDS
 
 /**
  * Wrapper of XFree() for convenience.
@@ -1988,20 +2019,57 @@ static inline win *find_win(session_t *ps, Window id) {
 }
 
 /**
+ * §1.2: Hash-table helpers for O(1) client_win → win* lookup.
+ *
+ * clt_ht[256] in session_t is a 256-bucket open-hash table indexed by
+ * (client_win & 0xFF).  Only windows where client_win != id are inserted.
+ * Collision chains use the win::clt_next field.
+ *
+ * INVARIANT: a win is in clt_ht iff client_win != None && client_win != id.
+ * Callers must call clt_ht_insert after setting a valid client_win, and
+ * clt_ht_remove before clearing it.
+ */
+static inline void clt_ht_insert(session_t *ps, win *w) {
+  if (!w->client_win || w->client_win == w->id)
+    return;
+  unsigned bucket = (unsigned)(w->client_win) & 0xFFu;
+  w->clt_next = ps->clt_ht[bucket];
+  ps->clt_ht[bucket] = w;
+}
+
+static inline void clt_ht_remove(session_t *ps, win *w) {
+  if (!w->client_win || w->client_win == w->id)
+    return;
+  unsigned bucket = (unsigned)(w->client_win) & 0xFFu;
+  win **cur = &ps->clt_ht[bucket];
+  while (*cur) {
+    if (*cur == w) {
+      *cur = w->clt_next;
+      w->clt_next = NULL;
+      return;
+    }
+    cur = &(*cur)->clt_next;
+  }
+  /* Not found — silent, same semantics as win_ht_remove. */
+}
+
+/**
  * Find out the WM frame of a client window using existing data.
  *
- * @param id window ID
- * @return struct _win object of the found window, NULL if not found
+ * §1.2: O(1) amortised via clt_ht, replacing the previous O(n) list scan.
+ * Destroyed windows are skipped so callers behave exactly as before.
+ *
+ * @param id  client window ID to look up
+ * @return    frame win*, or NULL if not found
  */
 static inline win *find_toplevel(session_t *ps, Window id) {
   if (!id)
     return NULL;
 
-  for (win *w = ps->list; w; w = w->next) {
+  for (win *w = ps->clt_ht[(unsigned)id & 0xFFu]; w; w = w->clt_next) {
     if (w->client_win == id && !w->destroyed)
       return w;
   }
-
   return NULL;
 }
 

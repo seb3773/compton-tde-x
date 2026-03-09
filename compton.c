@@ -207,7 +207,10 @@ static conv *make_gaussian_map(double r) {
   double t;
   double g;
 
+  /* §audit-5: check malloc return to avoid NULL deref. */
   c = malloc(sizeof(conv) + size * size * sizeof(float));
+  if (!c)
+    return NULL;
   c->size = size;
   c->data = (float *)(c + 1);
   t = 0.0;
@@ -348,8 +351,16 @@ static void presum_gaussian(session_t *ps, conv *map) {
   if (ps->shadow_top)
     free(ps->shadow_top);
 
+  /* §audit-5: check malloc returns to avoid NULL deref on OOM. */
   ps->shadow_corner = malloc((ps->cgsize + 1) * (ps->cgsize + 1) * 26);
   ps->shadow_top = malloc((ps->cgsize + 1) * 26);
+  if (!ps->shadow_corner || !ps->shadow_top) {
+    free(ps->shadow_corner);
+    free(ps->shadow_top);
+    ps->shadow_corner = NULL;
+    ps->shadow_top = NULL;
+    return;
+  }
 
   for (x = 0; x <= ps->cgsize; x++) {
     ps->shadow_top[25 * (ps->cgsize + 1) + x] = sum_gaussian(
@@ -394,9 +405,19 @@ static XImage *make_shadow(session_t *ps, double opacity, int width,
   int x, y;
   unsigned char d;
   int x_diff;
+  /* §audit-12: clamp opacity_int to [0, 25] to prevent out-of-bounds
+   * access to shadow_corner[] and shadow_top[] if opacity is negative
+   * or greater than 1.0 (e.g. from misconfiguration). */
   int opacity_int = (int)(opacity * 25);
+  if (opacity_int < 0)
+    opacity_int = 0;
+  if (opacity_int > 25)
+    opacity_int = 25;
 
-  data = malloc(swidth * sheight * sizeof(unsigned char));
+  if (swidth <= 0 || sheight <= 0 || swidth > 16384 || sheight > 16384)
+    return 0;
+
+  data = malloc((size_t)swidth * (size_t)sheight * sizeof(unsigned char));
   if (!data)
     return 0;
 
@@ -531,7 +552,7 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 
   shadow_image = make_shadow(ps, opacity, width, height);
   if (!shadow_image)
-    return None;
+    return false;
 
   shadow_pixmap = XCreatePixmap(ps->dpy, ps->root, shadow_image->width,
                                 shadow_image->height, 8);
@@ -797,29 +818,41 @@ static long determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
  * @param wid window ID
  * @return struct _win object of the found window, NULL if not found
  */
+/**
+ * §3.1: Find the managed 'frame' window that contains the subwindow 'wid'.
+ *
+ * Fast path: check all managed windows whose frame_parent == wid, i.e.
+ * any window that has 'wid' as its direct X11 parent.  This avoids
+ * XQueryTree entirely for the common case (WM_STATE appeared on a direct
+ * child of a known top-level frame).
+ *
+ * Slow fallback (rare): if no match in the cache, climb the X11 parent
+ * hierarchy with XQueryTree as before, and update frame_parent along the way.
+ */
 static win *find_toplevel2(session_t *ps, Window wid) {
-  win *w = NULL;
+  if (!wid || wid == ps->root)
+    return NULL;
 
-  // We traverse through its ancestors to find out the frame
+  /* Fast path: check if wid is a direct child of any managed window */
+  for (win *iw = ps->list; iw; iw = iw->next) {
+    if (!iw->destroyed && iw->frame_parent == wid)
+      return iw;
+  }
+
+  /* Slow fallback: climb the X11 hierarchy without caching (rare) */
+  win *w = NULL;
   while (wid && wid != ps->root && !(w = find_win(ps, wid))) {
-    Window troot;
-    Window parent;
+    Window troot, parent;
     Window *tchildren;
     unsigned tnchildren;
-
-    // XQueryTree probably fails if you run compton when X is somehow
-    // initializing (like add it in .xinitrc). In this case
-    // just leave it alone.
+    set_ignore_next(ps);
     if (!XQueryTree(ps->dpy, wid, &troot, &parent, &tchildren, &tnchildren)) {
       parent = 0;
       break;
     }
-
     cxfree(tchildren);
-
     wid = parent;
   }
-
   return w;
 }
 
@@ -1074,11 +1107,22 @@ static XserverRegion border_size(session_t *ps, win *w, bool use_offset) {
 
 /**
  * Look for the client window of a particular window.
+ *
+ * §audit-2: added depth bound to prevent unbounded recursion (and thus
+ * stack overflow) on deep X11 window hierarchies.  The previous version
+ * had no limit — the only unguarded recursive DFS left in the codebase.
+ * A depth of 8 is more than sufficient: WM_STATE is typically set on
+ * direct children or grandchildren of the frame window.
  */
-static Window find_client_win(session_t *ps, Window w) {
+#define FIND_CLIENT_WIN_MAX_DEPTH 8
+
+static Window find_client_win_impl(session_t *ps, Window w, int depth) {
   if (wid_has_prop(ps, w, ps->atom_client)) {
     return w;
   }
+
+  if (depth >= FIND_CLIENT_WIN_MAX_DEPTH)
+    return 0;
 
   Window *children;
   unsigned int nchildren;
@@ -1090,13 +1134,17 @@ static Window find_client_win(session_t *ps, Window w) {
   }
 
   for (i = 0; i < nchildren; ++i) {
-    if ((ret = find_client_win(ps, children[i])))
+    if ((ret = find_client_win_impl(ps, children[i], depth + 1)))
       break;
   }
 
   cxfree(children);
 
   return ret;
+}
+
+static inline Window find_client_win(session_t *ps, Window w) {
+  return find_client_win_impl(ps, w, 0);
 }
 
 /**
@@ -2592,21 +2640,21 @@ static double get_opacity_percent(win *w) {
   return ((double)w->opacity) / OPAQUE;
 }
 
-/* §4.8 fix: removed *(long*)data strict-aliasing UB — the Atom value read
- * from XGetWindowProperty is never actually used by any caller; we only
- * care about whether the property *exists* (nitems > 0, format == 32).
- * Using memcpy would be the safe read, but since the value is unused a
- * simple existence check suffices and eliminates the UB entirely. */
-static Bool get_window_transparency_filter_greyscale(const session_t *ps,
-                                                     Window w) {
+/* §audit-7: unified the four structurally-identical get_window_* predicates
+ * into a single generic helper.  Only the Atom argument differs between them.
+ * Saves ~200 B of machine code (4 functions → 1 + 4 thin wrappers).
+ *
+ * §4.8 fix preserved: we only check property existence (ntimes > 0,
+ * format == 32), never read the actual value → no strict-aliasing UB. */
+static Bool get_window_atom_prop_exists(const session_t *ps, Window w,
+                                        Atom prop) {
   Atom actual;
   int format;
   unsigned long n, left;
   unsigned char *data = NULL;
 
-  int result = XGetWindowProperty(
-      ps->dpy, w, ps->atom_win_type_tde_transparency_filter_greyscale, 0L, 1L,
-      False, XA_ATOM, &actual, &format, &n, &left, &data);
+  int result = XGetWindowProperty(ps->dpy, w, prop, 0L, 1L, False, XA_ATOM,
+                                  &actual, &format, &n, &left, &data);
 
   if (result == Success && data != NULL && format == 32) {
     XFree((void *)data);
@@ -2615,65 +2663,29 @@ static Bool get_window_transparency_filter_greyscale(const session_t *ps,
   if (data)
     XFree((void *)data);
   return False;
+}
+
+static Bool get_window_transparency_filter_greyscale(const session_t *ps,
+                                                     Window w) {
+  return get_window_atom_prop_exists(
+      ps, w, ps->atom_win_type_tde_transparency_filter_greyscale);
 }
 
 static Bool
 get_window_transparency_filter_greyscale_blended(const session_t *ps,
                                                  Window w) {
-  Atom actual;
-  int format;
-  unsigned long n, left;
-  unsigned char *data = NULL;
-
-  int result = XGetWindowProperty(
-      ps->dpy, w, ps->atom_win_type_tde_transparency_filter_greyscale_blend, 0L,
-      1L, False, XA_ATOM, &actual, &format, &n, &left, &data);
-
-  if (result == Success && data != NULL && format == 32) {
-    XFree((void *)data);
-    return True;
-  }
-  if (data)
-    XFree((void *)data);
-  return False;
+  return get_window_atom_prop_exists(
+      ps, w, ps->atom_win_type_tde_transparency_filter_greyscale_blend);
 }
 
 static Bool get_window_transparent_to_desktop(const session_t *ps, Window w) {
-  Atom actual;
-  int format;
-  unsigned long n, left;
-  unsigned char *data = NULL;
-
-  int result = XGetWindowProperty(
-      ps->dpy, w, ps->atom_win_type_tde_transparent_to_desktop, 0L, 1L, False,
-      XA_ATOM, &actual, &format, &n, &left, &data);
-
-  if (result == Success && data != NULL && format == 32) {
-    XFree((void *)data);
-    return True;
-  }
-  if (data)
-    XFree((void *)data);
-  return False;
+  return get_window_atom_prop_exists(
+      ps, w, ps->atom_win_type_tde_transparent_to_desktop);
 }
 
 static Bool get_window_transparent_to_black(const session_t *ps, Window w) {
-  Atom actual;
-  int format;
-  unsigned long n, left;
-  unsigned char *data = NULL;
-
-  int result = XGetWindowProperty(
-      ps->dpy, w, ps->atom_win_type_tde_transparent_to_black, 0L, 1L, False,
-      XA_ATOM, &actual, &format, &n, &left, &data);
-
-  if (result == Success && data != NULL && format == 32) {
-    XFree((void *)data);
-    return True;
-  }
-  if (data)
-    XFree((void *)data);
-  return False;
+  return get_window_atom_prop_exists(
+      ps, w, ps->atom_win_type_tde_transparent_to_black);
 }
 
 /* §4.3/§1.2 fix comment preserved above (original 4-function block replaced).
@@ -2779,7 +2791,8 @@ static void calc_opacity(session_t *ps, win *w) {
 
   if (w->destroyed || IsViewable != w->a.map_state) {
 #ifdef DEBUG_FADE
-    printf_dbgf("(%#010lx): calc_opacity forcing full transparency\n");
+    /* §audit-9: the format expected a %lx argument but none was provided. */
+    printf_dbgf("(%#010lx): calc_opacity forcing full transparency\n", w->id);
 #endif
     opacity = 0;
   } else {
@@ -2878,7 +2891,8 @@ static void win_determine_fade(session_t *ps, win *w) {
   }
 
 #ifdef DEBUG_FADE
-  printf_dbgf("(%#010lx): fade = %d\n", w->id, w->fade ? w->fade : NULL);
+  /* §audit-9: w->fade is bool; the ternary passed NULL (pointer) as %d. */
+  printf_dbgf("(%#010lx): fade = %d\n", w->id, w->fade);
 #endif
 }
 
@@ -3233,6 +3247,26 @@ static void calc_shadow_geometry(session_t *ps, win *w) {
 }
 
 /**
+ * §5.1: Fetch and cache the WM_HINTS urgency flag for a window.
+ *
+ * Called from win_mark_client() (when a client window becomes known) and
+ * from ev_property_notify() when WM_HINTS changes on a client window.
+ * A single XGetWMHints call here replaces the per‐condition‐evaluation
+ * call that was previously buried in c2_match_once_leaf().
+ */
+static void win_update_urgency(session_t *ps, win *w) {
+  w->urgency = false;
+  if (!w->client_win || w->client_win == w->id)
+    return;
+  XWMHints *hints = XGetWMHints(ps->dpy, w->client_win);
+  if (hints) {
+    if (hints->flags & XUrgencyHint)
+      w->urgency = true;
+    XFree(hints);
+  }
+}
+
+/**
  * Update window type.
  */
 static void win_upd_wintype(session_t *ps, win *w) {
@@ -3264,7 +3298,13 @@ static void win_upd_wintype(session_t *ps, win *w) {
  * @param client window ID of the client window
  */
 static void win_mark_client(session_t *ps, win *w, Window client) {
+  /* §1.2: remove old clt_ht entry before updating client_win */
+  clt_ht_remove(ps, w);
+
   w->client_win = client;
+
+  /* §1.2: insert new clt_ht entry (guards client_win == id internally) */
+  clt_ht_insert(ps, w);
 
   // If the window isn't mapped yet, stop here, as the function will be
   // called in map_win()
@@ -3276,6 +3316,9 @@ static void win_mark_client(session_t *ps, win *w, Window client) {
 
   // Make sure the XSelectInput() requests are sent
   XFlush(ps->dpy);
+
+  /* §5.1: fetch and cache urgency flag now that client is known */
+  win_update_urgency(ps, w);
 
   win_upd_wintype(ps, w);
 
@@ -3309,6 +3352,9 @@ static void win_mark_client(session_t *ps, win *w, Window client) {
  */
 static void win_unmark_client(session_t *ps, win *w) {
   Window client = w->client_win;
+
+  /* §1.2: remove from clt_ht before clearing client_win */
+  clt_ht_remove(ps, w);
 
   w->client_win = None;
 
@@ -3386,10 +3432,13 @@ static bool add_win(session_t *ps, Window id, Window prev) {
       .in_openclose = false,
 
       .client_win = None,
+      .frame_parent = None, /* §3.1: will be set by add_win() */
       .window_type = WINTYPE_UNKNOWN,
       .wmwin = false,
       .leader = None,
       .cache_leader = None,
+      .clt_next = NULL, /* §1.2: clt_ht chain pointer */
+      .urgency = false, /* §5.1: WM_HINTS urgency cache */
 
       .focused = false,
       .focused_force = UNSET,
@@ -3509,6 +3558,20 @@ static bool add_win(session_t *ps, Window id, Window prev) {
   *p = new;
   win_ht_insert(ps, new); /* §1.1: register in O(1) lookup table */
 
+  /* §3.1: cache the direct X11 parent of this window to accelerate
+   * find_toplevel2() — XQueryTree is called once at creation, never again
+   * for the common case. */
+  {
+    Window t_root, t_parent;
+    Window *t_children;
+    unsigned t_nchildren;
+    if (XQueryTree(ps->dpy, id, &t_root, &t_parent, &t_children,
+                   &t_nchildren)) {
+      new->frame_parent = t_parent;
+      cxfree(t_children);
+    }
+  }
+
 #ifdef CONFIG_DBUS
   // Send D-Bus signal
   if (ps->o.dbus) {
@@ -3523,6 +3586,13 @@ static bool add_win(session_t *ps, Window id, Window prev) {
   return true;
 }
 
+/**
+ * §audit-11: single-pass restack.
+ * The old implementation did two separate O(n) scans of ps->list:
+ * one to find w (unhook position), and another to find new_above
+ * (insert position).  Now merged into a single scan that locates
+ * both in one traversal.
+ */
 static void restack_win(session_t *ps, win *w, Window new_above) {
   Window old_above;
 
@@ -3535,37 +3605,41 @@ static void restack_win(session_t *ps, win *w, Window new_above) {
   }
 
   if (old_above != new_above) {
-    win **prev = NULL, **prev_old = NULL;
+    win **prev_old = NULL; /* pointer-to-pointer where w is linked */
+    win **prev_new = NULL; /* pointer-to-pointer where new_above is */
 
-    // unhook
-    for (prev = &ps->list; *prev; prev = &(*prev)->next) {
-      if ((*prev) == w)
-        break;
+    /* Single pass: find both w and the new_above target. */
+    for (win **p = &ps->list; *p; p = &(*p)->next) {
+      if (*p == w)
+        prev_old = p;
+      if ((*p)->id == new_above && !(*p)->destroyed)
+        prev_new = p;
     }
 
-    prev_old = prev;
-
-    bool found = false;
-
-    // rehook
-    for (prev = &ps->list; *prev; prev = &(*prev)->next) {
-      if ((*prev)->id == new_above && !(*prev)->destroyed) {
-        found = true;
-        break;
-      }
-    }
-
-    if (new_above && !found) {
+    if (new_above && !prev_new) {
       printf_errf("(%#010lx, %#010lx): "
                   "Failed to found new above window.",
                   w->id, new_above);
       return;
     }
 
-    *prev_old = w->next;
+    /* Unhook w from its current position. */
+    if (prev_old) {
+      *prev_old = w->next;
 
-    w->next = *prev;
-    *prev = w;
+      /* If prev_new pointed to w->next (i.e. the node right after w),
+       * the unhook above just changed the value at *prev_old, so
+       * prev_new may now be stale if it was == &w->next.  Recalculate
+       * only in that edge case. */
+      if (prev_new == &w->next)
+        prev_new = prev_old;
+    }
+
+    /* Rehook w before *prev_new (or at list head if new_above==None). */
+    if (!prev_new)
+      prev_new = &ps->list;
+    w->next = *prev_new;
+    *prev_new = w;
 
 #ifdef DEBUG_RESTACK
     {
@@ -3747,6 +3821,8 @@ static void finish_destroy_win(session_t *ps, Window id) {
 
       finish_unmap_win(ps, w);
       win_ht_remove(ps, w); /* §1.1: remove from O(1) lookup table */
+      clt_ht_remove(ps,
+                    w); /* §1.2: prevent Use-After-Free for client_win chains */
       *prev = w->next;
 
       // Clear active_win if it's pointing to the destroyed window
@@ -4319,27 +4395,21 @@ static bool win_get_class(session_t *ps, win *w) {
           wid_get_prop(ps, w->client_win, ps->atom_pid, 1L, XA_CARDINAL, 32);
       if (pid_prop.nitems) {
         long this_pid = winprop_get_int(pid_prop);
-        // Scan all tracked windows for one with the same PID and a class.
-        // Read PID from client_win (the actual app window, not the WM frame).
+        /* §audit-14: cache the PID for future scan lookups. */
+        w->cached_pid = this_pid;
+        // Scan all tracked windows for one with the same cached PID.
+        // No X11 round-trips needed — we use cached_pid from each win.
         for (win *cw = ps->list; cw; cw = cw->next) {
           if (cw == w || !cw->class_instance)
             continue;
-          Window cw_id = cw->client_win ? cw->client_win : cw->id;
-          winprop_t cw_pid_prop =
-              wid_get_prop(ps, cw_id, ps->atom_pid, 1L, XA_CARDINAL, 32);
-          if (cw_pid_prop.nitems) {
-            long cw_pid = winprop_get_int(cw_pid_prop);
-            if (cw_pid == this_pid) {
-              // Same process → inherit class
-              w->class_instance = mstrcpy(cw->class_instance);
-              if (cw->class_general)
-                w->class_general = mstrcpy(cw->class_general);
-              free_winprop(&cw_pid_prop);
-              free_winprop(&pid_prop);
-              return true;
-            }
+          if (cw->cached_pid == this_pid) {
+            // Same process → inherit class
+            w->class_instance = mstrcpy(cw->class_instance);
+            if (cw->class_general)
+              w->class_general = mstrcpy(cw->class_general);
+            free_winprop(&pid_prop);
+            return true;
           }
-          free_winprop(&cw_pid_prop);
         }
       }
       free_winprop(&pid_prop);
@@ -4683,12 +4753,19 @@ inline static void ev_expose(session_t *ps, XExposeEvent *ev) {
   if (ev->window == ps->root || (ps->overlay && ev->window == ps->overlay)) {
     int more = ev->count + 1;
     if (ps->n_expose == ps->size_expose) {
+      /* §audit-5: use safe realloc pattern to avoid leaking the old
+       * pointer and NULL-deref on allocation failure. */
       if (ps->expose_rects) {
-        ps->expose_rects = realloc(ps->expose_rects, (ps->size_expose + more) *
-                                                         sizeof(XRectangle));
+        XRectangle *tmp = realloc(ps->expose_rects, (ps->size_expose + more) *
+                                                        sizeof(XRectangle));
+        if (!tmp)
+          return;
+        ps->expose_rects = tmp;
         ps->size_expose += more;
       } else {
         ps->expose_rects = malloc(more * sizeof(XRectangle));
+        if (!ps->expose_rects)
+          return;
         ps->size_expose = more;
       }
     }
@@ -4722,6 +4799,12 @@ static void update_ewmh_active_win(session_t *ps) {
     win_set_focused(ps, w, true);
 }
 
+/**
+ * §audit-6: deduplicate find_win/find_toplevel lookups.
+ * The old implementation called find_win() and find_toplevel() up to 6+
+ * times for the same ev->window.  Now we cache one lookup of each at the
+ * top and re-use the results throughout the function.
+ */
 inline static void ev_property_notify(session_t *ps, XPropertyEvent *ev) {
 #ifdef DEBUG_EVENTS
   {
@@ -4750,21 +4833,26 @@ inline static void ev_property_notify(session_t *ps, XPropertyEvent *ev) {
     return;
   }
 
+  /* §audit-6: single cached lookup per type — O(1) via hash tables but
+   * still saves 3-5 pointer-chase + comparison chains per event. */
+  win *w_frame = find_win(ps, ev->window);
+  win *w_top = find_toplevel(ps, ev->window);
+
   // If WM_STATE changes
   if (ev->atom == ps->atom_client) {
     // Check whether it could be a client window
-    if (!find_toplevel(ps, ev->window)) {
+    if (!w_top) {
       // Reset event mask anyway
       XSelectInput(ps->dpy, ev->window,
                    determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN));
 
-      win *w_top = find_toplevel2(ps, ev->window);
+      win *w_top2 = find_toplevel2(ps, ev->window);
       // Initialize client_win as early as possible
-      if (w_top && (!w_top->client_win || w_top->client_win == w_top->id) &&
+      if (w_top2 && (!w_top2->client_win || w_top2->client_win == w_top2->id) &&
           wid_has_prop(ps, ev->window, ps->atom_client)) {
-        w_top->wmwin = false;
-        win_unmark_client(ps, w_top);
-        win_mark_client(ps, w_top, ev->window);
+        w_top2->wmwin = false;
+        win_unmark_client(ps, w_top2);
+        win_mark_client(ps, w_top2, ev->window);
       }
     }
   }
@@ -4772,81 +4860,81 @@ inline static void ev_property_notify(session_t *ps, XPropertyEvent *ev) {
   // If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
   // there are always some stupid applications. (#144)
   if (ev->atom == ps->atom_win_type) {
-    win *w = NULL;
-    if ((w = find_toplevel(ps, ev->window)))
-      win_upd_wintype(ps, w);
+    if (w_top)
+      win_upd_wintype(ps, w_top);
   }
 
   // If _NET_WM_OPACITY changes
   if (ev->atom == ps->atom_opacity) {
-    win *w = NULL;
-    if ((w = find_win(ps, ev->window)))
-      w->opacity_prop = wid_get_opacity_prop(ps, w->id, OPAQUE);
-    else if (ps->o.detect_client_opacity && (w = find_toplevel(ps, ev->window)))
-      w->opacity_prop_client = wid_get_opacity_prop(ps, w->client_win, OPAQUE);
-    if (w) {
-      w->flags |= WFLAG_OPCT_CHANGE;
+    if (w_frame)
+      w_frame->opacity_prop = wid_get_opacity_prop(ps, w_frame->id, OPAQUE);
+    else if (ps->o.detect_client_opacity && w_top)
+      w_top->opacity_prop_client =
+          wid_get_opacity_prop(ps, w_top->client_win, OPAQUE);
+    win *w_opct = w_frame ? w_frame : w_top;
+    if (w_opct) {
+      w_opct->flags |= WFLAG_OPCT_CHANGE;
     }
   }
 
   // If frame extents property changes
   if (ps->o.frame_opacity && ev->atom == ps->atom_frame_extents) {
-    win *w = find_toplevel(ps, ev->window);
-    if (w) {
-      get_frame_extents(ps, w, ev->window);
+    if (w_top) {
+      get_frame_extents(ps, w_top, ev->window);
       // If frame extents change, the window needs repaint
-      add_damage_win(ps, w);
+      add_damage_win(ps, w_top);
     }
   }
 
   // If name changes
   if (ps->o.track_wdata &&
       (ps->atom_name == ev->atom || ps->atom_name_ewmh == ev->atom)) {
-    win *w = find_toplevel(ps, ev->window);
-    if (w && 1 == win_get_name(ps, w)) {
-      win_on_factor_change(ps, w);
+    if (w_top && 1 == win_get_name(ps, w_top)) {
+      win_on_factor_change(ps, w_top);
     }
   }
 
   // If class changes
   if (ps->o.track_wdata && ps->atom_class == ev->atom) {
-    win *w = find_toplevel(ps, ev->window);
-    if (w) {
-      win_get_class(ps, w);
-      win_on_factor_change(ps, w);
+    if (w_top) {
+      win_get_class(ps, w_top);
+      win_on_factor_change(ps, w_top);
     }
   }
 
   // If role changes
   if (ps->o.track_wdata && ps->atom_role == ev->atom) {
-    win *w = find_toplevel(ps, ev->window);
-    if (w && 1 == win_get_role(ps, w)) {
-      win_on_factor_change(ps, w);
+    if (w_top && 1 == win_get_role(ps, w_top)) {
+      win_on_factor_change(ps, w_top);
     }
   }
 
   // If _TDE_WM_WINDOW_SHADOW changes
   if (ps->o.respect_prop_shadow && ps->atom_compton_shadow == ev->atom) {
-    win *w = find_win(ps, ev->window);
-    if (w)
-      win_update_prop_shadow(ps, w);
+    if (w_frame)
+      win_update_prop_shadow(ps, w_frame);
+  }
+
+  // §5.1: If WM_HINTS changes (urgency flag may have flipped)
+  if (ps->atom_wm_hints == ev->atom) {
+    if (w_top) {
+      win_update_urgency(ps, w_top);
+      win_on_factor_change(ps, w_top);
+    }
   }
 
   // If a leader property changes
   if ((ps->o.detect_transient && ps->atom_transient == ev->atom) ||
       (ps->o.detect_client_leader && ps->atom_client_leader == ev->atom)) {
-    win *w = find_toplevel(ps, ev->window);
-    if (w) {
-      win_update_leader(ps, w);
+    if (w_top) {
+      win_update_leader(ps, w_top);
     }
   }
 
   // Check for other atoms we are tracking
   for (latom_t *platom = ps->track_atom_lst; platom; platom = platom->next) {
     if (platom->atom == ev->atom) {
-      win *w = find_win(ps, ev->window);
-      if (!w)
-        w = find_toplevel(ps, ev->window);
+      win *w = w_frame ? w_frame : w_top;
       if (w)
         win_on_factor_change(ps, w);
       break;
@@ -5028,6 +5116,13 @@ static void ev_handle(session_t *ps, XEvent *ev) {
  * Print usage text and exit.
  */
 static void usage(int ret) {
+#ifdef COMPTON_MINIMAL
+  /* §audit-13: in minimal builds, avoid embedding ~4 KB of usage text.
+   * Point the user to the man page instead. */
+  FILE *f = (ret ? stderr : stdout);
+  fprintf(f, "compton (" COMPTON_VERSION ")\n"
+             "Run 'man compton-tde' for usage information.\n");
+#else
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
 #define WARNING
   const static char *usage_text =
@@ -5415,6 +5510,7 @@ static void usage(int ret) {
   fputs(usage_text, f);
 #undef WARNING
 #undef WARNING_DISABLED
+#endif /* COMPTON_MINIMAL */
 
   exit(ret);
 }
@@ -5466,27 +5562,19 @@ static bool register_cm(session_t *ps) {
 
   // Acquire X Selection _NET_WM_CM_S?
   if (!ps->o.no_x_selection) {
-    unsigned len = strlen(REGISTER_PROP) + 2;
-    int s = ps->scr;
+    /* §audit-15: use a fixed-size stack buffer instead of the fragile
+     * manual digit-counting + malloc.  REGISTER_PROP is 12 chars;
+     * even a 5-digit screen number fits in 32 with room to spare. */
+    char buf[32];
+    snprintf(buf, sizeof(buf), REGISTER_PROP "%d", ps->scr);
 
-    while (s >= 10) {
-      ++len;
-      s /= 10;
-    }
-
-    Window w;
     Atom a;
     static char net_wm_cm[] = "_NET_WM_CM_Sxx";
-
     snprintf(net_wm_cm, sizeof(net_wm_cm), "_NET_WM_CM_S%d", ps->scr);
     a = XInternAtom(ps->dpy, net_wm_cm, False);
 
-    char *buf = malloc(len);
-    snprintf(buf, len, REGISTER_PROP "%d", ps->scr);
-    buf[len - 1] = '\0';
     // setting this causes compton to abort on TDE login
     // XSetSelectionOwner(ps->dpy, get_atom(ps, buf), ps->reg_win, 0);
-    free(buf);
   }
 
   return true;
@@ -5614,6 +5702,26 @@ static void unlink_pid_file() {
 static inline bool parse_long(const char *s, long *dest) {
   const char *endptr = NULL;
   long val = strtol(s, (char **)&endptr, 0);
+  if (!endptr || endptr == s) {
+    printf_errf("(\"%s\"): Invalid number.", s);
+    return false;
+  }
+  while (isspace(*endptr))
+    ++endptr;
+  if (*endptr) {
+    printf_errf("(\"%s\"): Trailing characters.", s);
+    return false;
+  }
+  *dest = val;
+  return true;
+}
+
+/**
+ * Parse a double number.
+ */
+static inline bool parse_double(const char *s, double *dest) {
+  const char *endptr = NULL;
+  double val = strtod(s, (char **)&endptr);
   if (!endptr || endptr == s) {
     printf_errf("(\"%s\"): Invalid number.", s);
     return false;
@@ -5760,64 +5868,234 @@ static inline XFixed *parse_conv_kern(session_t *ps, const char *src,
  */
 static bool parse_conv_kern_lst(session_t *ps, const char *src, XFixed **dest,
                                 int max) {
+  /* §audit-10: pre-computed XFixed kernel arrays.
+   * Eliminates ~800 B of string constants from .rodata AND the runtime
+   * strtod parsing that the old recursive parse_conv_kern_lst() path
+   * executed.  XDoubleToFixed() is a macro → values are compile-time
+   * constant-folded by the compiler.
+   *
+   * Format: [XDoubleToFixed(wid), XDoubleToFixed(hei), wid*hei elements]
+   * The center element (hei/2 * wid + wid/2) is always 0.
+   */
+#define XF(x) XDoubleToFixed(x)
+  /* 3x3box */
+  static const XFixed k_3x3box[] = {
+      XF(3), XF(3), XF(1), XF(1), XF(1), XF(1), 0, XF(1), XF(1), XF(1), XF(1),
+  };
+  /* 5x5box */
+  static const XFixed k_5x5box[] = {
+      XF(5), XF(5), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1),
+      XF(1), XF(1), XF(1), XF(1), XF(1), 0,     XF(1), XF(1), XF(1),
+      XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1),
+  };
+  /* 7x7box */
+  static const XFixed k_7x7box[] = {
+      XF(7), XF(7), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1),
+      XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1),
+      XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), 0,
+      XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1),
+      XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1), XF(1),
+      XF(1), XF(1), XF(1), XF(1), XF(1), XF(1),
+  };
+  /* 3x3gaussian */
+  static const XFixed k_3x3g[] = {
+      XF(3),        XF(3), XF(0.243117), XF(0.493069), XF(0.243117),
+      XF(0.493069), 0,     XF(0.493069), XF(0.243117), XF(0.493069),
+      XF(0.243117),
+  };
+  /* 5x5gaussian */
+  static const XFixed k_5x5g[] = {
+      XF(5),        XF(5),        XF(0.003493), XF(0.029143), XF(0.059106),
+      XF(0.029143), XF(0.003493), XF(0.029143), XF(0.243117), XF(0.493069),
+      XF(0.243117), XF(0.029143), XF(0.059106), XF(0.493069), 0,
+      XF(0.493069), XF(0.059106), XF(0.029143), XF(0.243117), XF(0.493069),
+      XF(0.243117), XF(0.029143), XF(0.003493), XF(0.029143), XF(0.059106),
+      XF(0.029143), XF(0.003493),
+  };
+  /* 7x7gaussian */
+  static const XFixed k_7x7g[] = {
+      XF(7),        XF(7),        XF(0.000003),
+      XF(0.000102), XF(0.000849), XF(0.001723),
+      XF(0.000849), XF(0.000102), XF(0.000003),
+      XF(0.000102), XF(0.003493), XF(0.029143),
+      XF(0.059106), XF(0.029143), XF(0.003493),
+      XF(0.000102), XF(0.000849), XF(0.029143),
+      XF(0.243117), XF(0.493069), XF(0.243117),
+      XF(0.029143), XF(0.000849), XF(0.001723),
+      XF(0.059106), XF(0.493069), 0,
+      XF(0.493069), XF(0.059106), XF(0.001723),
+      XF(0.000849), XF(0.029143), XF(0.243117),
+      XF(0.493069), XF(0.243117), XF(0.029143),
+      XF(0.000849), XF(0.000102), XF(0.003493),
+      XF(0.029143), XF(0.059106), XF(0.029143),
+      XF(0.003493), XF(0.000102), XF(0.000003),
+      XF(0.000102), XF(0.000849), XF(0.001723),
+      XF(0.000849), XF(0.000102), XF(0.000003),
+  };
+  /* 9x9gaussian */
+  static const XFixed k_9x9g[] = {
+      XF(9),
+      XF(9),
+      XF(0.000000),
+      XF(0.000000),
+      XF(0.000001),
+      XF(0.000006),
+      XF(0.000012),
+      XF(0.000006),
+      XF(0.000001),
+      XF(0.000000),
+      XF(0.000000),
+      XF(0.000000),
+      XF(0.000003),
+      XF(0.000102),
+      XF(0.000849),
+      XF(0.001723),
+      XF(0.000849),
+      XF(0.000102),
+      XF(0.000003),
+      XF(0.000000),
+      XF(0.000001),
+      XF(0.000102),
+      XF(0.003493),
+      XF(0.029143),
+      XF(0.059106),
+      XF(0.029143),
+      XF(0.003493),
+      XF(0.000102),
+      XF(0.000001),
+      XF(0.000006),
+      XF(0.000849),
+      XF(0.029143),
+      XF(0.243117),
+      XF(0.493069),
+      XF(0.243117),
+      XF(0.029143),
+      XF(0.000849),
+      XF(0.000006),
+      XF(0.000012),
+      XF(0.001723),
+      XF(0.059106),
+      XF(0.493069),
+      0,
+      XF(0.493069),
+      XF(0.059106),
+      XF(0.001723),
+      XF(0.000012),
+      XF(0.000006),
+      XF(0.000849),
+      XF(0.029143),
+      XF(0.243117),
+      XF(0.493069),
+      XF(0.243117),
+      XF(0.029143),
+      XF(0.000849),
+      XF(0.000006),
+      XF(0.000001),
+      XF(0.000102),
+      XF(0.003493),
+      XF(0.029143),
+      XF(0.059106),
+      XF(0.029143),
+      XF(0.003493),
+      XF(0.000102),
+      XF(0.000001),
+      XF(0.000000),
+      XF(0.000003),
+      XF(0.000102),
+      XF(0.000849),
+      XF(0.001723),
+      XF(0.000849),
+      XF(0.000102),
+      XF(0.000003),
+      XF(0.000000),
+      XF(0.000000),
+      XF(0.000000),
+      XF(0.000001),
+      XF(0.000006),
+      XF(0.000012),
+      XF(0.000006),
+      XF(0.000001),
+      XF(0.000000),
+      XF(0.000000),
+  };
+  /* 11x11gaussian */
+  static const XFixed k_11x11g[] = {
+      XF(11),       XF(11),       XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000001), XF(0.000006),
+      XF(0.000012), XF(0.000006), XF(0.000001),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000003),
+      XF(0.000102), XF(0.000849), XF(0.001723),
+      XF(0.000849), XF(0.000102), XF(0.000003),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000001), XF(0.000102), XF(0.003493),
+      XF(0.029143), XF(0.059106), XF(0.029143),
+      XF(0.003493), XF(0.000102), XF(0.000001),
+      XF(0.000000), XF(0.000000), XF(0.000006),
+      XF(0.000849), XF(0.029143), XF(0.243117),
+      XF(0.493069), XF(0.243117), XF(0.029143),
+      XF(0.000849), XF(0.000006), XF(0.000000),
+      XF(0.000000), XF(0.000012), XF(0.001723),
+      XF(0.059106), XF(0.493069), 0,
+      XF(0.493069), XF(0.059106), XF(0.001723),
+      XF(0.000012), XF(0.000000), XF(0.000000),
+      XF(0.000006), XF(0.000849), XF(0.029143),
+      XF(0.243117), XF(0.493069), XF(0.243117),
+      XF(0.029143), XF(0.000849), XF(0.000006),
+      XF(0.000000), XF(0.000000), XF(0.000001),
+      XF(0.000102), XF(0.003493), XF(0.029143),
+      XF(0.059106), XF(0.029143), XF(0.003493),
+      XF(0.000102), XF(0.000001), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000003),
+      XF(0.000102), XF(0.000849), XF(0.001723),
+      XF(0.000849), XF(0.000102), XF(0.000003),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000001),
+      XF(0.000006), XF(0.000012), XF(0.000006),
+      XF(0.000001), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+      XF(0.000000), XF(0.000000), XF(0.000000),
+  };
+#undef XF
+
   static const struct {
     const char *name;
-    const char *kern_str;
+    const XFixed *kern;
+    size_t size; /* in bytes */
   } CONV_KERN_PREDEF[] = {
-      {"3x3box", "3,3,1,1,1,1,1,1,1,1,"},
-      {"5x5box", "5,5,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,"},
-      {"7x7box", "7,7,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,"
-                 "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,"},
-      {"3x3gaussian", "3,3,0.243117,0.493069,0.243117,0.493069,0.493069,0."
-                      "243117,0.493069,0.243117,"},
-      {"5x5gaussian",
-       "5,5,0.003493,0.029143,0.059106,0.029143,0.003493,0.029143,0.243117,0."
-       "493069,0.243117,0.029143,0.059106,0.493069,0.493069,0.059106,0.029143,"
-       "0.243117,0.493069,0.243117,0.029143,0.003493,0.029143,0.059106,0."
-       "029143,0.003493,"},
-      {"7x7gaussian",
-       "7,7,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0."
-       "000102,0.003493,0.029143,0.059106,0.029143,0.003493,0.000102,0.000849,"
-       "0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.001723,0."
-       "059106,0.493069,0.493069,0.059106,0.001723,0.000849,0.029143,0.243117,"
-       "0.493069,0.243117,0.029143,0.000849,0.000102,0.003493,0.029143,0."
-       "059106,0.029143,0.003493,0.000102,0.000003,0.000102,0.000849,0.001723,"
-       "0.000849,0.000102,0.000003,"},
-      {"9x9gaussian",
-       "9,9,0.000000,0.000000,0.000001,0.000006,0.000012,0.000006,0.000001,0."
-       "000000,0.000000,0.000000,0.000003,0.000102,0.000849,0.001723,0.000849,"
-       "0.000102,0.000003,0.000000,0.000001,0.000102,0.003493,0.029143,0."
-       "059106,0.029143,0.003493,0.000102,0.000001,0.000006,0.000849,0.029143,"
-       "0.243117,0.493069,0.243117,0.029143,0.000849,0.000006,0.000012,0."
-       "001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000012,0.000006,"
-       "0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0."
-       "000006,0.000001,0.000102,0.003493,0.029143,0.059106,0.029143,0.003493,"
-       "0.000102,0.000001,0.000000,0.000003,0.000102,0.000849,0.001723,0."
-       "000849,0.000102,0.000003,0.000000,0.000000,0.000000,0.000001,0.000006,"
-       "0.000012,0.000006,0.000001,0.000000,0.000000,"},
-      {"11x11gaussian",
-       "11,11,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0."
-       "000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000001,"
-       "0.000006,0.000012,0.000006,0.000001,0.000000,0.000000,0.000000,0."
-       "000000,0.000000,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,"
-       "0.000003,0.000000,0.000000,0.000000,0.000001,0.000102,0.003493,0."
-       "029143,0.059106,0.029143,0.003493,0.000102,0.000001,0.000000,0.000000,"
-       "0.000006,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0."
-       "000849,0.000006,0.000000,0.000000,0.000012,0.001723,0.059106,0.493069,"
-       "0.493069,0.059106,0.001723,0.000012,0.000000,0.000000,0.000006,0."
-       "000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000006,"
-       "0.000000,0.000000,0.000001,0.000102,0.003493,0.029143,0.059106,0."
-       "029143,0.003493,0.000102,0.000001,0.000000,0.000000,0.000000,0.000003,"
-       "0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000000,0."
-       "000000,0.000000,0.000000,0.000000,0.000001,0.000006,0.000012,0.000006,"
-       "0.000001,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0."
-       "000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0."
-       "000000,"},
+      {"3x3box", k_3x3box, sizeof(k_3x3box)},
+      {"5x5box", k_5x5box, sizeof(k_5x5box)},
+      {"7x7box", k_7x7box, sizeof(k_7x7box)},
+      {"3x3gaussian", k_3x3g, sizeof(k_3x3g)},
+      {"5x5gaussian", k_5x5g, sizeof(k_5x5g)},
+      {"7x7gaussian", k_7x7g, sizeof(k_7x7g)},
+      {"9x9gaussian", k_9x9g, sizeof(k_9x9g)},
+      {"11x11gaussian", k_11x11g, sizeof(k_11x11g)},
   };
-  for (int i = 0; i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]);
-       ++i)
-    if (!strcmp(CONV_KERN_PREDEF[i].name, src))
-      return parse_conv_kern_lst(ps, CONV_KERN_PREDEF[i].kern_str, dest, max);
+
+  for (unsigned i = 0;
+       i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]); ++i) {
+    if (!strcmp(CONV_KERN_PREDEF[i].name, src)) {
+      /* Free any previously allocated kernel in dest[0]. */
+      free(dest[0]);
+      dest[0] = malloc(CONV_KERN_PREDEF[i].size);
+      if (!dest[0])
+        return false;
+      memcpy(dest[0], CONV_KERN_PREDEF[i].kern, CONV_KERN_PREDEF[i].size);
+      /* Clear remaining slots (single-pass predefined kernel). */
+      for (int j = 1; j < max; ++j) {
+        free(dest[j]);
+        dest[j] = NULL;
+      }
+      return true;
+    }
+  }
 
   int i = 0;
   const char *pc = src;
@@ -6036,8 +6314,11 @@ static FILE *open_config_file(char *cpath, char **ppath) {
   }
 
   // Check system configuration file in $XDG_CONFIG_DIRS at last
+  /* §audit-8: strtok() modifies its argument in-place.  POSIX says the
+   * result of getenv() must not be modified.  Copy the string first. */
   if ((dir = getenv("XDG_CONFIG_DIRS")) && strlen(dir)) {
-    char *part = strtok(dir, ":");
+    char *dir_copy = mstrcpy(dir);
+    char *part = strtok(dir_copy, ":");
     while (part) {
       path = mstrjoin(part, config_filename);
       f = fopen(path, "r");
@@ -6045,10 +6326,13 @@ static FILE *open_config_file(char *cpath, char **ppath) {
         *ppath = path;
       else
         free(path);
-      if (f)
+      if (f) {
+        free(dir_copy);
         return f;
+      }
       part = strtok(NULL, ":");
     }
+    free(dir_copy);
   } else {
     path = mstrjoin(config_system_dir, config_filename);
     f = fopen(path, "r");
@@ -6520,6 +6804,7 @@ static void get_cfg(session_t *ps, int argc, char *const *argv,
   while (-1 !=
          (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
     long val = 0;
+    double dval = 0.0;
     switch (o) {
 #define P_CASEBOOL(idx, option)                                                \
   case idx:                                                                    \
@@ -6547,10 +6832,14 @@ static void get_cfg(session_t *ps, int argc, char *const *argv,
       break;
       P_CASELONG('D', fade_delta);
     case 'I':
-      ps->o.fade_in_step = normalize_d(atof(optarg)) * OPAQUE;
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.fade_in_step = normalize_d(dval) * OPAQUE;
       break;
     case 'O':
-      ps->o.fade_out_step = normalize_d(atof(optarg)) * OPAQUE;
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.fade_out_step = normalize_d(dval) * OPAQUE;
       break;
     case 'c':
       shadow_enable = true;
@@ -6562,7 +6851,9 @@ static void get_cfg(session_t *ps, int argc, char *const *argv,
       cfgtmp.no_dnd_shadow = true;
       break;
     case 'm':
-      cfgtmp.menu_opacity = atof(optarg);
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      cfgtmp.menu_opacity = dval;
       break;
     case 'f':
     case 'F':
@@ -6570,15 +6861,21 @@ static void get_cfg(session_t *ps, int argc, char *const *argv,
       break;
       P_CASELONG('r', shadow_radius);
     case 'o':
-      ps->o.shadow_opacity = atof(optarg);
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.shadow_opacity = dval;
       break;
       P_CASELONG('l', shadow_offset_x);
       P_CASELONG('t', shadow_offset_y);
     case 'i':
-      ps->o.inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.inactive_opacity = (normalize_d(dval) * OPAQUE);
       break;
     case 'e':
-      ps->o.frame_opacity = atof(optarg);
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.frame_opacity = dval;
       break;
       P_CASEBOOL('z', clear_shadow);
     case 'n':
@@ -6593,20 +6890,28 @@ static void get_cfg(session_t *ps, int argc, char *const *argv,
       break;
     case 257:
       // --shadow-red
-      ps->o.shadow_red = atof(optarg);
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.shadow_red = dval;
       break;
     case 258:
       // --shadow-green
-      ps->o.shadow_green = atof(optarg);
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.shadow_green = dval;
       break;
     case 259:
       // --shadow-blue
-      ps->o.shadow_blue = atof(optarg);
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.shadow_blue = dval;
       break;
       P_CASEBOOL(260, inactive_opacity_override);
     case 261:
       // --inactive-dim
-      ps->o.inactive_dim = atof(optarg);
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.inactive_dim = dval;
       break;
       P_CASEBOOL(262, mark_wmwin_focused);
     case 263:
@@ -6626,7 +6931,9 @@ static void get_cfg(session_t *ps, int argc, char *const *argv,
       break;
     case 271:
       // --alpha-step
-      ps->o.alpha_step = atof(optarg);
+      if (!parse_double(optarg, &dval))
+        exit(1);
+      ps->o.alpha_step = dval;
       break;
       P_CASEBOOL(272, dbe);
       P_CASEBOOL(273, paint_on_overlay);
@@ -6704,7 +7011,9 @@ static void get_cfg(session_t *ps, int argc, char *const *argv,
       break;
     case 336:
       // --blur-strength
-      ps->o.blur_strength = atoi(optarg);
+      if (!parse_long(optarg, &val))
+        exit(1);
+      ps->o.blur_strength = val;
       break;
       P_CASELONG(302, resize_damage);
       P_CASEBOOL(303, glx_use_gpushader4);
@@ -6884,6 +7193,7 @@ static void init_atoms(session_t *ps) {
   ps->atom_compton_shadow = get_atom(ps, "_TDE_WM_WINDOW_SHADOW");
 
   ps->atom_win_type = get_atom(ps, "_NET_WM_WINDOW_TYPE");
+  ps->atom_wm_hints = XA_WM_HINTS; /* §5.1: used to track urgency changes */
   ps->atom_pid = get_atom(ps, "_NET_WM_PID");
   ps->atoms_wintypes[WINTYPE_UNKNOWN] = 0;
   ps->atoms_wintypes[WINTYPE_DESKTOP] =

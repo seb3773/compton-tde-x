@@ -259,8 +259,15 @@ bool glx_init(session_t *ps, bool need_render) {
 
     if (!ps->o.glx_no_stencil) {
       // Initialize stencil buffer
+      if (!ps->psglx->glx_stencil_enabled) {
+        glEnable(GL_STENCIL_TEST);
+        ps->psglx->glx_stencil_enabled = true;
+      }
       glClear(GL_STENCIL_BUFFER_BIT);
-      glDisable(GL_STENCIL_TEST);
+      if (ps->psglx->glx_stencil_enabled) {
+        glDisable(GL_STENCIL_TEST);
+        ps->psglx->glx_stencil_enabled = false;
+      }
       glStencilMask(0x1);
       glStencilFunc(GL_EQUAL, 0x1, 0x1);
     }
@@ -454,6 +461,10 @@ bool glx_init_blur(session_t *ps) {
       {
         int wid = XFixedToDouble(kern[0]), hei = XFixedToDouble(kern[1]);
         int nele = wid * hei - 1;
+        if (nele > 4096 || nele < 0) {
+          printf_errf("(): Blur kernel too large or invalid.");
+          return false;
+        }
         // Cache string lengths (avoid repeated strlen calls)
         const size_t sampler_len = strlen(sampler_type);
         const size_t ext_len = strlen(extension);
@@ -1179,8 +1190,14 @@ void glx_set_clip(session_t *ps, XserverRegion reg,
 
   static XRectangle rect_blank = {.x = 0, .y = 0, .width = 0, .height = 0};
 
-  glDisable(GL_STENCIL_TEST);
-  glDisable(GL_SCISSOR_TEST);
+  if (ps->psglx->glx_stencil_enabled) {
+    glDisable(GL_STENCIL_TEST);
+    ps->psglx->glx_stencil_enabled = false;
+  }
+  if (ps->psglx->glx_scissor_enabled) {
+    glDisable(GL_SCISSOR_TEST);
+    ps->psglx->glx_scissor_enabled = false;
+  }
 
   if (!reg)
     return;
@@ -1210,7 +1227,12 @@ void glx_set_clip(session_t *ps, XserverRegion reg,
     glScissor(rects[0].x, ps->root_height - rects[0].y - rects[0].height,
               rects[0].width, rects[0].height);
   } else {
-    glEnable(GL_STENCIL_TEST);
+    if (!ps->o.glx_no_stencil) {
+      if (!ps->psglx->glx_stencil_enabled) {
+        glEnable(GL_STENCIL_TEST);
+        ps->psglx->glx_stencil_enabled = true;
+      }
+    }
     glClear(GL_STENCIL_BUFFER_BIT);
 
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -1417,8 +1439,14 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 
   // Paint it back
   if (more_passes) {
-    glDisable(GL_STENCIL_TEST);
-    glDisable(GL_SCISSOR_TEST);
+    if (have_stencil && ps->psglx->glx_stencil_enabled) {
+      glDisable(GL_STENCIL_TEST);
+      ps->psglx->glx_stencil_enabled = false;
+    }
+    if (have_scissors && ps->psglx->glx_scissor_enabled) {
+      glDisable(GL_SCISSOR_TEST);
+      ps->psglx->glx_scissor_enabled = false;
+    }
   }
 
   bool last_pass = false;
@@ -1446,10 +1474,14 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
       static const GLenum DRAWBUFS[2] = {GL_BACK};
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
       glDrawBuffers(1, DRAWBUFS);
-      if (have_scissors)
+      if (have_scissors && !ps->psglx->glx_scissor_enabled) {
         glEnable(GL_SCISSOR_TEST);
-      if (have_stencil)
+        ps->psglx->glx_scissor_enabled = true;
+      }
+      if (have_stencil && !ps->psglx->glx_stencil_enabled) {
         glEnable(GL_STENCIL_TEST);
+        ps->psglx->glx_stencil_enabled = true;
+      }
     }
 #endif
 
@@ -1534,10 +1566,14 @@ glx_blur_dst_end:
 #endif
   glBindTexture(tex_tgt, 0);
   glDisable(tex_tgt);
-  if (have_scissors)
+  if (have_scissors && !ps->psglx->glx_scissor_enabled) {
     glEnable(GL_SCISSOR_TEST);
-  if (have_stencil)
+    ps->psglx->glx_scissor_enabled = true;
+  }
+  if (have_stencil && !ps->psglx->glx_stencil_enabled) {
     glEnable(GL_STENCIL_TEST);
+    ps->psglx->glx_stencil_enabled = true;
+  }
 
   if (&ibc == pbc) {
     free_glx_bc(ps, pbc);
@@ -1682,11 +1718,13 @@ void glx_dual_kawase_blur(session_t *ps, int dx, int dy, int width, int height,
   if (!iters || !g->kawase_pass.prog_down || !g->kawase_pass.prog_up)
     return;
 
-  const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
-  const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
+  const bool have_scissors = g->glx_scissor_enabled;
+  const bool have_stencil = g->glx_stencil_enabled;
 
   glDisable(GL_STENCIL_TEST);
+  g->glx_stencil_enabled = false;
   glDisable(GL_SCISSOR_TEST);
+  g->glx_scissor_enabled = false;
 
   // Resizing textures dynamically to avoid "miniature" bug
   int pass_w[MAX_BLUR_PASS + 1];
@@ -1773,10 +1811,14 @@ void glx_dual_kawase_blur(session_t *ps, int dx, int dy, int width, int height,
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
       glUniform1f(g->kawase_pass.unifm_opacity, 1.0f);
 
-      if (have_scissors)
+      if (have_scissors && !g->glx_scissor_enabled) {
         glEnable(GL_SCISSOR_TEST);
-      if (have_stencil)
+        g->glx_scissor_enabled = true;
+      }
+      if (have_stencil && !g->glx_stencil_enabled) {
         glEnable(GL_STENCIL_TEST);
+        g->glx_stencil_enabled = true;
+      }
 
       {
         P_PAINTREG_START();
@@ -1817,10 +1859,14 @@ void glx_dual_kawase_blur(session_t *ps, int dx, int dy, int width, int height,
         P_PAINTREG_END();
       }
 
-      if (have_scissors)
+      if (have_scissors && g->glx_scissor_enabled) {
         glDisable(GL_SCISSOR_TEST);
-      if (have_stencil)
+        g->glx_scissor_enabled = false;
+      }
+      if (have_stencil && g->glx_stencil_enabled) {
         glDisable(GL_STENCIL_TEST);
+        g->glx_stencil_enabled = false;
+      }
     }
   }
   glUseProgram(0);
@@ -1828,10 +1874,14 @@ void glx_dual_kawase_blur(session_t *ps, int dx, int dy, int width, int height,
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
   // Restore state properly at the end
-  if (have_scissors)
+  if (have_scissors && !g->glx_scissor_enabled) {
     glEnable(GL_SCISSOR_TEST);
-  if (have_stencil)
+    g->glx_scissor_enabled = true;
+  }
+  if (have_stencil && !g->glx_stencil_enabled) {
     glEnable(GL_STENCIL_TEST);
+    g->glx_stencil_enabled = true;
+  }
 }
 
 void glx_destroy_blur_kawase(session_t *ps) {

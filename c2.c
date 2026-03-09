@@ -603,7 +603,12 @@ static int c2_parse_pattern(session_t *ps, const char *pattern, int offset,
     // We can't determine the length of the pattern, so we use the length
     // to the end of the pattern string -- currently escape sequences
     // cannot be converted to a string longer than itself.
-    char *tptnstr = malloc((strlen(pattern + offset) + 1) * sizeof(char));
+    size_t ptnlen = strlen(pattern + offset);
+    if (ptnlen > 4096)
+      c2_error("Pattern string too long.");
+    char *tptnstr = malloc((ptnlen + 1) * sizeof(char));
+    if (!tptnstr)
+      c2_error("Failed to allocate memory for pattern string.");
     char *ptptnstr = tptnstr;
     pleaf->ptnstr = tptnstr;
     for (; pattern[offset] && delim != pattern[offset]; ++offset) {
@@ -882,8 +887,8 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
     }
 
     // Allocate match data block (required by pcre2_match, cannot be NULL)
-    pleaf->regex_pcre_match = pcre2_match_data_create_from_pattern(
-        pleaf->regex_pcre, NULL);
+    pleaf->regex_pcre_match =
+        pcre2_match_data_create_from_pattern(pleaf->regex_pcre, NULL);
     if (!pleaf->regex_pcre_match) {
       c2_error("Pattern \"%s\": Failed to allocate PCRE2 match data.",
                pleaf->ptnstr);
@@ -1201,18 +1206,13 @@ static inline void c2_match_once_leaf(session_t *ps, win *w,
         break;
       case C2_L_PGROUPFOCUSED:
         // True if any window with the same leader as w is focused
-        tgt = (w->leader && ps->active_leader &&
-               w->leader == ps->active_leader);
+        tgt =
+            (w->leader && ps->active_leader && w->leader == ps->active_leader);
         break;
-      case C2_L_PURGENT: {
-        // Read WM_HINTS urgency flag from the client window
-        Window twid = (w->client_win ? w->client_win : w->id);
-        XWMHints *hints = XGetWMHints(ps->dpy, twid);
-        tgt = (hints && (hints->flags & XUrgencyHint)) ? 1 : 0;
-        if (hints)
-          XFree(hints);
+      case C2_L_PURGENT:
+        /* §5.1: use cached urgency flag — no X round-trip */
+        tgt = w->urgency ? 1 : 0;
         break;
-      }
       case C2_L_PWMWIN:
         tgt = w->wmwin;
         break;

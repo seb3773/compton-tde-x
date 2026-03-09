@@ -930,7 +930,7 @@ static inline void resize_region(session_t *ps, XserverRegion region,
   newrects = calloc(nrects, sizeof(XRectangle));
   if (!newrects) {
     printf_errf("(): Failed to allocate memory.");
-    exit(1);
+    goto resize_region_end;
   }
 
   // Loop through all rectangles
