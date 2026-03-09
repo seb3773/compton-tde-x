@@ -671,6 +671,7 @@ static int c2_parse_pattern(session_t *ps, const char *pattern, int offset,
     ++offset;
     *ptptnstr = '\0';
     pleaf->ptnstr = mstrcpy(tptnstr);
+    pleaf->ptnstr_len = strlen(pleaf->ptnstr);
     free(tptnstr);
   }
 
@@ -784,6 +785,7 @@ static int c2_parse_legacy(session_t *ps, const char *pattern, int offset,
 
   // Copy the pattern
   pleaf->ptnstr = mstrcpy(pattern + offset);
+  pleaf->ptnstr_len = strlen(pleaf->ptnstr);
 
   if (!c2_l_postprocess(ps, pleaf))
     return -1;
@@ -1355,9 +1357,9 @@ static inline void c2_match_once_leaf(session_t *ps, win *w,
         break;
       case C2_L_MSTART:
         if (pleaf->match_ignorecase)
-          *pres = !strncasecmp(tgt, pleaf->ptnstr, strlen(pleaf->ptnstr));
+          *pres = !strncasecmp(tgt, pleaf->ptnstr, pleaf->ptnstr_len);
         else
-          *pres = !strncmp(tgt, pleaf->ptnstr, strlen(pleaf->ptnstr));
+          *pres = !strncmp(tgt, pleaf->ptnstr, pleaf->ptnstr_len);
         break;
       case C2_L_MWILDCARD: {
         int flags = 0;

@@ -148,20 +148,21 @@ static void run_fade(session_t *ps, win *w, unsigned steps) {
   if (!w->fade) {
     w->opacity = w->opacity_tgt;
   } else if (steps) {
-    // Use 64-bit integer to avoid overflow (opacity_t is uint32_t)
-    if (w->opacity < w->opacity_tgt) {
-      uint64_t new_opacity =
-          (uint64_t)w->opacity + (uint64_t)ps->o.fade_in_step * steps;
-      w->opacity = (new_opacity > w->opacity_tgt) ? w->opacity_tgt
-                                                  : (opacity_t)new_opacity;
-    } else {
-      uint64_t step_amount = (uint64_t)ps->o.fade_out_step * steps;
-      if (step_amount >= w->opacity - w->opacity_tgt) {
-        w->opacity = w->opacity_tgt;
-      } else {
-        w->opacity -= (opacity_t)step_amount;
-      }
-    }
+    const uint64_t current = w->opacity;
+    const uint64_t target = w->opacity_tgt;
+    const uint64_t in_step = (uint64_t)ps->o.fade_in_step * steps;
+    const uint64_t out_step = (uint64_t)ps->o.fade_out_step * steps;
+
+    // Branchless fade in computation
+    const uint64_t new_in = current + in_step;
+    const uint64_t clamped_in = (new_in > target) ? target : new_in;
+
+    // Branchless fade out computation
+    const uint64_t new_out = current - out_step;
+    const uint64_t clamped_out =
+        (current - target <= out_step) ? target : new_out;
+
+    w->opacity = (opacity_t)((current < target) ? clamped_in : clamped_out);
   }
 
   if (w->opacity != w->opacity_tgt) {
@@ -948,8 +949,7 @@ static bool get_root_tile(session_t *ps) {
         .repeat = True,
     };
     ps->root_tile_paint.pict = XRenderCreatePicture(
-        ps->dpy, pixmap, XRenderFindVisualFormat(ps->dpy, ps->vis), CPRepeat,
-        &pa);
+        ps->dpy, pixmap, ps->vis_pict_format, CPRepeat, &pa);
   }
 
   // Fill pixmap if needed
@@ -1591,6 +1591,12 @@ static inline void win_blur_background(session_t *ps, win *w,
   const int wid = w->widthb;
   const int hei = w->heightb;
 
+  // Heuristic: Skip blur for tiny areas or nearly fully opaque windows
+  // OPAQUE is 0xFFFFFFFF. 0.99 * OPAQUE represents 99% opacity.
+  if (w->opacity > (opacity_t)(0xFFFFFFFFu * 0.99) || (wid * hei) < 100) {
+    return;
+  }
+
   double factor_center = 1.0;
   /* Adjust blur strength according to window opacity */
   if (!ps->o.blur_background_fixed) {
@@ -2044,9 +2050,8 @@ static void paint_all(session_t *ps, XserverRegion region,
   if (!paint_isvalid(ps, &ps->tgt_buffer)) {
     // DBE painting mode: Directly paint to a Picture of the back buffer
     if (BKEND_XRENDER == ps->o.backend && ps->o.dbe) {
-      ps->tgt_buffer.pict =
-          XRenderCreatePicture(ps->dpy, ps->root_dbe,
-                               XRenderFindVisualFormat(ps->dpy, ps->vis), 0, 0);
+      ps->tgt_buffer.pict = XRenderCreatePicture(ps->dpy, ps->root_dbe,
+                                                 ps->vis_pict_format, 0, 0);
     }
     // No-DBE painting mode: Paint to an intermediate Picture then paint
     // the Picture to root window
@@ -2059,8 +2064,7 @@ static void paint_all(session_t *ps, XserverRegion region,
 
       if (BKEND_GLX != ps->o.backend)
         ps->tgt_buffer.pict = XRenderCreatePicture(
-            ps->dpy, ps->tgt_buffer.pixmap,
-            XRenderFindVisualFormat(ps->dpy, ps->vis), 0, 0);
+            ps->dpy, ps->tgt_buffer.pixmap, ps->vis_pict_format, 0, 0);
     }
   }
 #endif
@@ -7072,7 +7076,9 @@ static void get_cfg(session_t *ps, int argc, char *const *argv,
 
   // Range checking and option assignments
   ps->o.fade_delta = max_i(ps->o.fade_delta, 1);
-  ps->o.shadow_radius = max_i(ps->o.shadow_radius, 1);
+  // Cap shadow_radius to 128 to prevent massive RAM allocations on
+  // shadow_corner/top
+  ps->o.shadow_radius = min_i(max_i(ps->o.shadow_radius, 1), 128);
   ps->o.shadow_red = normalize_d(ps->o.shadow_red);
   ps->o.shadow_green = normalize_d(ps->o.shadow_green);
   ps->o.shadow_blue = normalize_d(ps->o.shadow_blue);
@@ -8475,12 +8481,10 @@ static session_t *session_init(session_t *ps_old, int argc, char **argv) {
     pa.subwindow_mode = IncludeInferiors;
 
     ps->root_picture = XRenderCreatePicture(
-        ps->dpy, ps->root, XRenderFindVisualFormat(ps->dpy, ps->vis),
-        CPSubwindowMode, &pa);
+        ps->dpy, ps->root, ps->vis_pict_format, CPSubwindowMode, &pa);
     if (ps->o.paint_on_overlay) {
       ps->tgt_picture = XRenderCreatePicture(
-          ps->dpy, ps->overlay, XRenderFindVisualFormat(ps->dpy, ps->vis),
-          CPSubwindowMode, &pa);
+          ps->dpy, ps->overlay, ps->vis_pict_format, CPSubwindowMode, &pa);
     } else {
       ps->tgt_picture = ps->root_picture;
     }
